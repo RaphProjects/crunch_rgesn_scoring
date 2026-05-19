@@ -1,0 +1,324 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>RGESN Scoring - Sobriété et Écoconception Logicielle</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="style.css">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Sidebar: Projects & Ingestion -->
+    <aside class="sidebar">
+      <div class="sidebar-header">
+        <div class="logo">
+          <i data-lucide="leaf" class="logo-icon"></i>
+          <span>EcoAudit <small>RGESN</small></span>
+        </div>
+      </div>
+      
+      <!-- Upload Section -->
+      <div class="upload-box">
+        <h3>Nouvelle Évaluation</h3>
+        <p class="upload-desc">Déposez l'archive ZIP de votre projet pour analyser sa conformité RGESN.</p>
+        
+        <form id="uploadForm">
+          <div class="form-group">
+            <label for="projectName">Nom du Projet</label>
+            <input type="text" id="projectName" placeholder="ex: Mon Application Web" required>
+          </div>
+          
+          <div class="drag-area" id="dragArea">
+            <i data-lucide="upload-cloud" class="drag-icon"></i>
+            <span class="drag-text">Glissez & Déposez le ZIP ou</span>
+            <button type="button" class="btn btn-secondary btn-sm" id="browseBtn">Parcourir</button>
+            <input type="file" id="fileInput" accept=".zip" hidden>
+          </div>
+          <div id="fileInfo" class="file-info hidden">
+            <i data-lucide="file-archive" class="file-icon"></i>
+            <span id="fileName">project.zip</span>
+            <button type="button" id="removeFileBtn"><i data-lucide="x"></i></button>
+          </div>
+
+          <!-- Selection mode d'analyse -->
+          <div class="form-group" style="margin-top: 14px; margin-bottom: 0;">
+            <label>Mode d'Analyse</label>
+            <div class="analysis-mode-selector">
+              <button type="button" class="mode-btn active" id="modeRegexBtn" data-mode="regex">
+                <i data-lucide="binary" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 4px;"></i> Classique (Regex)
+              </button>
+              <button type="button" class="mode-btn" id="modeLlmBtn" data-mode="llm">
+                <i data-lucide="cpu" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 4px;"></i> Assistée par IA
+              </button>
+            </div>
+          </div>
+
+          <!-- Panneau des options LLM -->
+          <div id="llmOptionsPanel" class="llm-options-panel hidden">
+            <div class="form-group">
+              <label for="llmProvider">Fournisseur d'IA</label>
+              <select id="llmProvider">
+                <option value="local">Local (Ollama compatible)</option>
+                <option value="openai">OpenAI (ChatGPT)</option>
+                <option value="mistral">Mistral AI</option>
+                <option value="anthropic">Anthropic (Claude)</option>
+              </select>
+            </div>
+            <div class="form-group" id="apiKeyGroup">
+              <label for="llmApiKey">Clé API</label>
+              <input type="password" id="llmApiKey" placeholder="Saisir la clé API...">
+            </div>
+            <div class="form-group" style="margin-bottom: 0;">
+              <label for="llmModel">Modèle cible</label>
+              <input type="text" id="llmModel" placeholder="gpt-4o-mini...">
+            </div>
+          </div>
+          
+          <button type="submit" class="btn btn-primary btn-block" id="submitBtn">
+            <i data-lucide="play" class="btn-icon"></i> Lancer l'Analyse
+          </button>
+        </form>
+      </div>
+
+      <!-- Projects List -->
+      <div class="projects-list-container">
+        <h3>Historique des Projets</h3>
+        <div id="projectsList" class="projects-list">
+          <!-- Populated by JavaScript -->
+          <div class="empty-state">
+            <i data-lucide="folder-open"></i>
+            <p>Aucun projet analysé</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Dashboard Area -->
+    <main class="main-content">
+      
+      <!-- Main view when a project is selected -->
+      <div id="projectView" class="project-view hidden">
+        
+        <!-- Project Header -->
+        <header class="project-header">
+          <div class="project-title-area">
+            <span class="badge" id="projectStatusBadge">Terminé</span>
+            <h1 id="currentProjectName">Nom du Projet</h1>
+            <p class="project-meta">
+              <span id="projectDate"><i data-lucide="calendar"></i> 19 Mai 2026</span>
+              <span id="projectFiles"><i data-lucide="file-code"></i> 142 fichiers</span>
+              <span id="projectMode" class="hidden"><i data-lucide="cpu"></i> Analyse IA</span>
+            </p>
+          </div>
+          <div class="project-actions">
+            <button class="btn btn-danger btn-outline" id="deleteProjectBtn">
+              <i data-lucide="trash-2"></i> Supprimer
+            </button>
+          </div>
+        </header>
+
+        <!-- Error State Alert -->
+        <div id="projectErrorAlert" class="alert alert-danger hidden">
+          <i data-lucide="alert-octagon" class="alert-icon"></i>
+          <div class="alert-body">
+            <h4>Échec de l'analyse</h4>
+            <p id="projectErrorMsg">Détails de l'erreur ici...</p>
+          </div>
+        </div>
+
+        <!-- Processing State Alert -->
+        <div id="projectProcessingAlert" class="alert alert-info hidden">
+          <div class="spinner"></div>
+          <div class="alert-body">
+            <h4>Analyse en cours...</h4>
+            <p>Le moteur inspecte le code source pour corréler les patterns techniques aux critères RGESN.</p>
+          </div>
+        </div>
+
+        <!-- LLM Diagnostic Card -->
+        <div id="llmDiagnosticCard" class="card full-width hidden" style="margin-bottom: 30px; border-color: rgba(139, 92, 246, 0.25); background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(0, 0, 0, 0) 100%);">
+          <div class="card-header" style="border-bottom: 1px solid rgba(139, 92, 246, 0.15);">
+            <h2 style="color: #c084fc;"><i data-lucide="activity" style="width:16px; height:16px; vertical-align:middle; margin-right:6px;"></i> Diagnostic d'Analyse IA</h2>
+            <span class="badge" id="llmDiagStatusBadge">Succès</span>
+          </div>
+          <div class="card-body" style="padding: 20px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 16px;">
+              <div>
+                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Fournisseur d'IA</p>
+                <p id="llmDiagProvider" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
+              </div>
+              <div>
+                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Modèle Interrogé</p>
+                <p id="llmDiagModel" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
+              </div>
+              <div>
+                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Temps de réponse</p>
+                <p id="llmDiagTime" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
+              </div>
+            </div>
+            
+            <!-- Connection Failed Error Message -->
+            <div id="llmDiagErrorContainer" class="hidden" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--border-radius-sm); padding: 12px 16px; margin-bottom: 16px;">
+              <p style="font-size: 12px; font-weight: 700; color: #fca5a5; display: flex; align-items: center; gap: 6px;"><i data-lucide="alert-circle" style="width: 14px; height: 14px;"></i> Connexion impossible ou inférence échouée :</p>
+              <code id="llmDiagErrorMsg" style="display: block; font-family: monospace; font-size: 11px; color: #fecaca; margin-top: 6px; white-space: pre-wrap; word-break: break-all;">-</code>
+              <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">Le moteur a automatiquement basculé en mode <strong>Repli Classique (Regex)</strong> pour vous délivrer un audit complet.</p>
+            </div>
+
+            <!-- Toggle raw response -->
+            <div id="llmDiagOutputContainer">
+              <button type="button" class="btn btn-secondary btn-sm" id="toggleLlmRawBtn" style="border-color: rgba(139, 92, 246, 0.3); color: #c084fc; background: rgba(139, 92, 246, 0.05); font-weight: 700;">
+                <i data-lucide="chevron-right" class="btn-icon"></i> Voir la réponse brute de l'IA (JSON)
+              </button>
+              <pre id="llmDiagRawPre" class="hidden" style="margin-top: 14px; padding: 14px; background: rgba(0, 0, 0, 0.5); border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-family: monospace; font-size: 11px; color: #a78bfa; overflow-x: auto; max-height: 250px; white-space: pre-wrap;"></pre>
+            </div>
+          </div>
+        </div>
+
+        <!-- Dashboard Content Grid -->
+        <div id="projectDashboardContent" class="dashboard-grid">
+          
+          <!-- Key Metrics Column -->
+          <div class="card card-score-hero">
+            <div class="card-header">
+              <h2>Conformité Globale</h2>
+              <span class="tooltip-trigger" title="Le score est calculé en pondérant chaque critère validé (Priorité x Difficulté), excluant les critères identifiés comme Non-Applicables (N/A)."><i data-lucide="help-circle"></i></span>
+            </div>
+            <div class="card-body score-hero-body">
+              <div class="gauge-container">
+                <svg class="progress-ring" width="200" height="200">
+                  <circle class="progress-ring__circle-bg" stroke="#1e293b" stroke-width="14" fill="transparent" r="82" cx="100" cy="100"/>
+                  <circle class="progress-ring__circle" stroke="url(#gradientGreen)" stroke-width="14" stroke-linecap="round" fill="transparent" r="82" cx="100" cy="100" stroke-dasharray="515.22" stroke-dashoffset="515.22"/>
+                  <defs>
+                    <linearGradient id="gradientGreen" x1="0%" y1="0%" x2="100%" y2="100%">
+                      <stop offset="0%" stop-color="#10b981" />
+                      <stop offset="100%" stop-color="#3b82f6" />
+                    </linearGradient>
+                  </defs>
+                </svg>
+                <div class="gauge-value">
+                  <span id="globalScorePercent">0</span><small>%</small>
+                </div>
+              </div>
+              
+              <div class="points-badge">
+                <span id="scorePointsObtained">0</span> / <span id="scorePointsMax">0</span> points applicables
+              </div>
+            </div>
+          </div>
+
+          <!-- Category Scores -->
+          <div class="card card-categories">
+            <div class="card-header">
+              <h2>Impact par Catégorie RGESN</h2>
+            </div>
+            <div class="card-body">
+              <div id="categoriesList" class="categories-grid">
+                <!-- Populated by JavaScript -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Quick Wins Section -->
+          <div class="card card-quick-wins full-width">
+            <div class="card-header">
+              <div class="header-title">
+                <h2><i data-lucide="zap" class="icon-zap"></i> Quick Wins (Recommandations Prioritaires)</h2>
+                <span class="tag-quick-wins">Ratio Effort/Impact Maximal</span>
+              </div>
+              <p class="subtitle">Critères non conformes de niveau de <strong>Priorité : Prioritaire</strong> et de <strong>Difficulté : Faible</strong>. Corrigez-les en priorité.</p>
+            </div>
+            <div class="card-body">
+              <div id="quickWinsDeck" class="quick-wins-deck">
+                <!-- Populated by JavaScript -->
+              </div>
+            </div>
+          </div>
+
+          <!-- Criteria Explorer (Filters & List) -->
+          <div class="card card-explorer full-width">
+            <div class="card-header explorer-header">
+              <h2>Référentiel & Résultats de l'Audit</h2>
+              
+              <div class="explorer-controls">
+                <div class="search-box">
+                  <i data-lucide="search"></i>
+                  <input type="text" id="criteriaSearch" placeholder="Rechercher par code ou texte (ex: Str5)...">
+                </div>
+                
+                <div class="filter-tabs">
+                  <button class="filter-tab active" data-filter="all">Tous</button>
+                  <button class="filter-tab" data-filter="auto">Scan Automatique</button>
+                  <button class="filter-tab" data-filter="manual">Auto-Déclaration</button>
+                  <button class="filter-tab" data-filter="Validé">Validé</button>
+                  <button class="filter-tab" data-filter="Non-Validé">Non-Validé</button>
+                  <button class="filter-tab" data-filter="N/A">N/A</button>
+                </div>
+              </div>
+            </div>
+            
+            <div class="card-body">
+              <div class="criteria-list-headers">
+                <span class="col-code">Code</span>
+                <span class="col-crit">Critère / Point de Contrôle</span>
+                <span class="col-cat">Catégorie</span>
+                <span class="col-prio">Priorité</span>
+                <span class="col-diff">Difficulté</span>
+                <span class="col-type">Type</span>
+                <span class="col-status">Statut</span>
+              </div>
+              
+              <div id="criteriaList" class="criteria-accordion-list">
+                <!-- Populated by JavaScript -->
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+
+      <!-- Welcome / Empty State View -->
+      <div id="welcomeView" class="welcome-view">
+        <div class="welcome-container">
+          <div class="eco-circle animate-pulse">
+            <i data-lucide="shield-check" class="welcome-shield"></i>
+          </div>
+          <h1>Portail d'Écoconception Logicielle RGESN</h1>
+          <p>
+            Mesurez l'empreinte environnementale de vos architectures de services numériques et optimisez votre conformité aux 10 dimensions du <strong>Référentiel Général d'Écoconception des Services Numériques (RGESN)</strong>.
+          </p>
+          <div class="feature-highlights">
+            <div class="feature-item">
+              <i data-lucide="binary"></i>
+              <h4>Scan Statique Auto</h4>
+              <p>Analyse automatique de vos dépendances, balises multimédias et fichiers d'infrastructures.</p>
+            </div>
+            <div class="feature-item">
+              <i data-lucide="edit-3"></i>
+              <h4>Déclaration Guidée</h4>
+              <p>Formulaires d'auto-évaluation intégrés pour les aspects de gouvernance (Hébergement, Accessibilité).</p>
+            </div>
+            <div class="feature-item">
+              <i data-lucide="trending-up"></i>
+              <h4>Plan d'Action</h4>
+              <p>Identification instantanée des Quick Wins prioritaires pour orienter vos sprints de refactoring.</p>
+            </div>
+          </div>
+          <div class="welcome-action">
+            <p>Sélectionnez un projet existant ou téléversez un ZIP dans la barre latérale pour démarrer l'audit.</p>
+          </div>
+        </div>
+      </div>
+    </main>
+
+  </div>
+
+  <!-- JavaScript logic -->
+  <script src="app.js"></script>
+</body>
+</html>
