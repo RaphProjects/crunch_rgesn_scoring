@@ -1,0 +1,12 @@
+{
+  "name": "light",
+  "dependencies": {
+    "redis": "1",
+    "babel": "1",
+    "@tensorflow/tfjs": "1"
+  },
+  "devDependencies": {
+    "size-limit": "1"
+  },
+  "browserslist": ["> 0.2%"]
+}
