@@ -14,7 +14,7 @@ try {
  */
 async function queryLLM(config, systemPrompt, userPrompt) {
   const { llmProvider, llmApiKey, llmModel } = config;
-  
+
   if (llmProvider === 'local') {
     // Local Ollama compatible endpoint
     const url = 'http://localhost:11434/v1/chat/completions';
@@ -26,24 +26,24 @@ async function queryLLM(config, systemPrompt, userPrompt) {
       ],
       temperature: 0.1
     };
-    
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json'
       },
       body: JSON.stringify(body),
-      signal: AbortSignal.timeout(30000) // 30s timeout
+      signal: AbortSignal.timeout(90000) // 90s timeout
     });
-    
+
     if (!response.ok) {
       throw new Error(`Erreur Ollama locale (${response.status}) : ${await response.text()}`);
     }
-    
+
     const data = await response.json();
     return data.choices[0].message.content;
   }
-  
+
   if (llmProvider === 'openai') {
     const url = 'https://api.openai.com/v1/chat/completions';
     const body = {
@@ -54,7 +54,7 @@ async function queryLLM(config, systemPrompt, userPrompt) {
       ],
       temperature: 0.1
     };
-    
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -64,11 +64,11 @@ async function queryLLM(config, systemPrompt, userPrompt) {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(45000) // 45s timeout
     });
-    
+
     if (!response.ok) {
       throw new Error(`Erreur OpenAI (${response.status}) : ${await response.text()}`);
     }
-    
+
     const data = await response.json();
     return data.choices[0].message.content;
   }
@@ -83,7 +83,7 @@ async function queryLLM(config, systemPrompt, userPrompt) {
       ],
       temperature: 0.1
     };
-    
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -93,11 +93,11 @@ async function queryLLM(config, systemPrompt, userPrompt) {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(45000) // 45s timeout
     });
-    
+
     if (!response.ok) {
       throw new Error(`Erreur Mistral AI (${response.status}) : ${await response.text()}`);
     }
-    
+
     const data = await response.json();
     return data.choices[0].message.content;
   }
@@ -113,7 +113,7 @@ async function queryLLM(config, systemPrompt, userPrompt) {
       ],
       temperature: 0.1
     };
-    
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -124,11 +124,11 @@ async function queryLLM(config, systemPrompt, userPrompt) {
       body: JSON.stringify(body),
       signal: AbortSignal.timeout(45000) // 45s timeout
     });
-    
+
     if (!response.ok) {
       throw new Error(`Erreur Anthropic (${response.status}) : ${await response.text()}`);
     }
-    
+
     const data = await response.json();
     return data.content[0].text;
   }
@@ -139,19 +139,61 @@ async function queryLLM(config, systemPrompt, userPrompt) {
 /**
  * Bulletproof JSON extractor from LLM text output
  */
+function cleanJsonString(jsonText) {
+  let inString = false;
+  let escaped = false;
+  let result = '';
+  
+  for (let i = 0; i < jsonText.length; i++) {
+    const char = jsonText[i];
+    
+    if (char === '"' && !escaped) {
+      inString = !inString;
+      result += char;
+    } else if (inString) {
+      if (escaped) {
+        if (!['"', '\\', '/', 'b', 'f', 'n', 'r', 't', 'u'].includes(char)) {
+          // Invalid escape sequence in JSON (like Windows path backslash C:\Users)
+          // We double the backslash to make it standard JSON compatible
+          result += '\\' + char;
+        } else {
+          result += char;
+        }
+        escaped = false;
+      } else if (char === '\\') {
+        escaped = true;
+        result += char;
+      } else if (char === '\n') {
+        result += '\\n';
+      } else if (char === '\r') {
+        result += '\\r';
+      } else if (char === '\t') {
+        result += '\\t';
+      } else {
+        result += char;
+      }
+    } else {
+      result += char;
+      escaped = false;
+    }
+  }
+  return result;
+}
+
 function extractJson(text) {
+  let cleanText = text.trim();
   try {
     const match = text.match(/```json\s*([\s\S]*?)\s*```/) || text.match(/```\s*([\s\S]*?)\s*```/);
-    const cleanText = match ? match[1].trim() : text.trim();
-    return JSON.parse(cleanText);
+    cleanText = match ? match[1].trim() : text.trim();
+    return JSON.parse(cleanJsonString(cleanText));
   } catch (e) {
-    const firstBrace = text.indexOf('{');
-    const lastBrace = text.lastIndexOf('}');
+    const firstBrace = cleanText.indexOf('{');
+    const lastBrace = cleanText.lastIndexOf('}');
     if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
-      const JSONText = text.slice(firstBrace, lastBrace + 1);
+      const JSONText = cleanText.slice(firstBrace, lastBrace + 1);
       try {
-        return JSON.parse(JSONText);
-      } catch (err) {}
+        return JSON.parse(cleanJsonString(JSONText));
+      } catch (err) { }
     }
     throw new Error("Impossible de parser le JSON retourné par l'IA : " + e.message);
   }
@@ -166,13 +208,13 @@ function collectProjectContext(dirPath, fileContents) {
   const readme = fileContents.find(f => f.name.toLowerCase().includes('readme'));
   const dockerfile = fileContents.find(f => f.name.toLowerCase() === 'dockerfile');
   const requirements = fileContents.find(f => f.name === 'requirements.txt');
-  
+
   let context = `Nom du projet : ${path.basename(dirPath)}\n\n`;
   context += `Arborescence des fichiers :\n${fileTree.slice(0, 100).join('\n')}\n`;
   if (fileTree.length > 100) {
     context += `... et ${fileTree.length - 100} autres fichiers.\n`;
   }
-  
+
   if (packageJson) {
     context += `\n--- FICHIER DE DÉPENDANCE (package.json) ---\n${packageJson.content}\n`;
   }
@@ -234,7 +276,7 @@ function getAllFiles(dirPath, arrayOfFiles = []) {
 async function analyzeDirectory(dirPath, llmConfig = null) {
   let llmDiagnostic = null;
   const allFiles = getAllFiles(dirPath);
-  
+
   // File classification helper
   const filesByExt = {
     html: [],
@@ -251,7 +293,7 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
   allFiles.forEach(file => {
     const ext = path.extname(file).toLowerCase();
     const base = path.basename(file).toLowerCase();
-    
+
     if (ext === '.html' || ext === '.htm') filesByExt.html.push(file);
     else if (ext === '.css' || ext === '.scss' || ext === '.less') filesByExt.css.push(file);
     else if (['.js', '.jsx', '.ts', '.tsx', '.mjs'].includes(ext)) filesByExt.js.push(file);
@@ -266,11 +308,11 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
   // Load content of key files for quick inspection
   const fileContents = [];
   const readLimit = 200; // Read up to 200 files to avoid out of memory
-  
+
   let filesRead = 0;
   for (const file of allFiles) {
     if (filesRead >= readLimit) break;
-    
+
     const ext = path.extname(file).toLowerCase();
     // Only read text files
     if (['.html', '.htm', '.css', '.js', '.jsx', '.ts', '.tsx', '.json', '.yaml', '.yml', '.py', '.txt', '.md'].includes(ext) || path.basename(file).toLowerCase() === 'dockerfile') {
@@ -293,12 +335,12 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
   // (The LLM refinement pipeline has been moved below to run AFTER classical pre-scan)
 
   // Pre-calculate presence of general structures
-  const hasVideos = fileContents.some(f => 
+  const hasVideos = fileContents.some(f =>
     f.ext === '.html' && (f.content.includes('<video') || f.content.includes('<source')) ||
     f.ext === '.js' && (f.content.includes('createElement("video")') || f.content.includes('document.createElement(\'video\'') || f.content.includes('videoSrc'))
   );
 
-  const hasML = fileContents.some(f => 
+  const hasML = fileContents.some(f =>
     f.ext === '.py' && (f.content.includes('import torch') || f.content.includes('import tensorflow') || f.content.includes('from keras') || f.content.includes('sklearn')) ||
     f.ext === '.json' && f.name === 'package.json' && (f.content.includes('@tensorflow/tfjs') || f.content.includes('onnxruntime'))
   );
@@ -349,7 +391,7 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
     try {
       const pkg = JSON.parse(f.content);
       const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-      
+
       // Look for specific closed or non-standard heavy packages, e.g., Flash, Silverlight, obsolete proprietary SDKs
       const legacyClosedTech = ['flash', 'silverlight', 'activex', 'proprietary-plugin-xyz'];
       legacyClosedTech.forEach(tech => {
@@ -359,7 +401,7 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
           str5Findings.push(`Dépendance fermée/obsolète trouvée : ${tech} dans ${f.relPath}`);
         }
       });
-      
+
       if (str5Findings.length === 0) {
         str5Findings.push(`Analyse de package.json (${f.relPath}) : ${Object.keys(allDeps).length} dépendances standards analysées (npm).`);
       }
@@ -387,8 +429,8 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
   const spec1Findings = [];
 
   // Check for browserslist
-  const hasBrowserslist = packageJsonFiles.some(f => f.content.includes('"browserslist"')) || 
-                           fileContents.some(f => f.name === '.browserslistrc');
+  const hasBrowserslist = packageJsonFiles.some(f => f.content.includes('"browserslist"')) ||
+    fileContents.some(f => f.name === '.browserslistrc');
   if (hasBrowserslist) {
     spec1Status = 'Validé';
     spec1Justification = 'Définition d\'une cible de terminaux/navigateurs via la configuration "browserslist" détectée.';
@@ -422,20 +464,20 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
     try {
       const pkg = JSON.parse(f.content);
       const allDeps = { ...pkg.dependencies, ...pkg.devDependencies };
-      
+
       const polyfills = ['babel', 'core-js', 'postcss', 'polyfill', 'swc', 'tslib'];
       const foundPolyfills = polyfills.filter(p => Object.keys(allDeps).some(dep => dep.includes(p)));
-      
+
       if (foundPolyfills.length > 0) {
         spec2Status = 'Validé';
         spec2Justification = `Présence de compilateurs/polyfills (${foundPolyfills.join(', ')}) pour supporter d'anciens terminaux.`;
         spec2Findings.push(`Outils de rétrocompatibilité détectés : ${foundPolyfills.join(', ')}`);
-        
+
         spec3Status = 'Validé';
         spec3Justification = `Présence de compilateurs/polyfills (${foundPolyfills.join(', ')}) assurant le support d'anciennes versions d'OS/navigateurs.`;
         spec3Findings.push(`Outils de rétrocompatibilité détectés : ${foundPolyfills.join(', ')}`);
       }
-    } catch(e) {}
+    } catch (e) { }
   });
 
   setAuto('Spec2', spec2Status, spec2Justification, spec2Findings);
@@ -609,7 +651,7 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
     let cont3Status = 'Non-Validé';
     let cont3Justification = 'Aucune option d\'écoute seule (sans piste vidéo) n\'a été détectée pour les flux vidéo.';
     const cont3Findings = [];
-    
+
     fileContents.filter(f => f.ext === '.html' || f.ext === '.js').forEach(f => {
       const audioOnlyKeywords = ['écoute seule', 'audio-only', 'audioonly', 'désactiver la vidéo', 'piste audio', 'sans vidéo', 'mute video'];
       audioOnlyKeywords.forEach(kw => {
@@ -641,7 +683,7 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
         bck2Justification = `Dépendances de cache serveur trouvées dans package.json : ${found.join(', ')}.`;
         bck2Findings.push(`Bibliothèques de cache installées : ${found.join(', ')}`);
       }
-    } catch(e){}
+    } catch (e) { }
   });
 
   fileContents.filter(f => ['.js', '.py'].includes(f.ext)).forEach(f => {
@@ -692,7 +734,7 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
         frnt1Justification = `Outils de budget de performance frontend ou d'analyse de bundles configurés : ${found.join(', ')}.`;
         frnt1Findings.push(`Outils de budget installés : ${found.join(', ')}`);
       }
-    } catch(e){}
+    } catch (e) { }
   });
 
   fileContents.forEach(f => {
@@ -780,22 +822,22 @@ async function analyzeDirectory(dirPath, llmConfig = null) {
 
     try {
       console.log(`[Analyzer] Running LLM-assisted analysis using ${provider}...`);
-      
+
       const projectContext = collectProjectContext(dirPath, fileContents);
-      
+
       const llmTargetCodes = [
         'Str5', 'Spec1', 'Spec2', 'Spec3', 'Spec4', 'Spec5',
         'Uxui1', 'Uxui2', 'Uxui3', 'Cont1', 'Cont2', 'Cont3',
         'Bck2', 'Bck3', 'Frnt1', 'Frnt2', 'Algo3', 'Algo6'
       ];
-      
+
       let fullRawOutput = "";
-      
+
       // Loop sequentially through each criterion to prevent small models from collapsing
       for (const code of llmTargetCodes) {
         const initial = results[code];
         if (!initial) continue;
-        
+
         const systemPrompt = `Tu es un auditeur expert du Référentiel Général d'Éco-conception de Services Numériques (RGESN).
 Ton rôle est de valider ou corriger la pré-analyse statique (regex) pour UN SEUL critère : "${code}".
 Voici le texte du critère à évaluer : "${initial.text}"
@@ -828,9 +870,9 @@ Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'obj
         try {
           criterionRawOutput = await queryLLM(llmConfig, systemPrompt, userPrompt);
           fullRawOutput += `--- Critère ${code} ---\n${criterionRawOutput}\n\n`;
-          
+
           const parsedData = extractJson(criterionRawOutput);
-          
+
           if (parsedData && parsedData.status) {
             results[code].status = parsedData.status;
             results[code].justification = `[Audit IA] ${parsedData.justification || initial.justification}`;
@@ -842,7 +884,7 @@ Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'obj
           fullRawOutput += `--- Critère ${code} (ERREUR) ---\n${critError.message}\nOutput: ${criterionRawOutput}\n\n`;
         }
       }
-      
+
       const duration = Date.now() - startTime;
       llmDiagnostic = {
         status: 'success',
@@ -852,7 +894,7 @@ Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'obj
         rawOutput: fullRawOutput.trim()
       };
       console.log(`[Analyzer] LLM-assisted multi-query analysis completed successfully in ${duration}ms!`);
-      
+
     } catch (llmError) {
       console.error(`[Analyzer] LLM analysis failed, falling back to Classical Static Analysis. Error:`, llmError);
       const duration = Date.now() - startTime;
