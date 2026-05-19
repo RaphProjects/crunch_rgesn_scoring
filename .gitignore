@@ -1,0 +1,5 @@
+# Logs
+logs.log
+*.log
+
+# THIS IS A DEV ENVIRONMENT, DON'T gitignore useful stuff

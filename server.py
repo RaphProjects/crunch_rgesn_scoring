@@ -6,8 +6,10 @@ from datetime import datetime
 from flask import Flask, send_from_directory, request, jsonify
 import db
 from analysis_queue import analysis_queue
+from logger import log_event
 
 app = Flask(__name__, static_folder='public', static_url_path='')
+log_event("SERVER", "STARTUP", "Flask application initialized")
 PORT = int(os.environ.get('PORT', 3000))
 
 uploads_dir = os.path.join(os.path.dirname(__file__), 'uploads')
@@ -19,6 +21,7 @@ os.makedirs(os.path.join(os.path.dirname(__file__), 'temp_extractions'), exist_o
 @app.route('/api/criteria', methods=['GET'])
 def get_criteria():
     try:
+        log_event("SERVER", "API", "GET /api/criteria requested")
         criteria_path = os.path.join(os.path.dirname(__file__), 'rgesn_criteria.json')
         with open(criteria_path, 'r', encoding='utf-8') as f:
             criteria = json.load(f)
@@ -29,6 +32,7 @@ def get_criteria():
 @app.route('/api/projects', methods=['GET'])
 def get_projects():
     try:
+        log_event("SERVER", "API", "GET /api/projects requested")
         projects = db.get_projects()
         return jsonify(projects)
     except Exception as e:
@@ -37,6 +41,7 @@ def get_projects():
 @app.route('/api/projects/<id>', methods=['GET'])
 def get_project_by_id(id):
     try:
+        log_event("SERVER", "API", f"GET /api/projects/{id} requested")
         project = db.get_project_by_id(id)
         if not project:
             return jsonify({"error": "Projet introuvable."}), 404
@@ -47,6 +52,7 @@ def get_project_by_id(id):
 @app.route('/api/upload', methods=['POST'])
 def upload_project():
     try:
+        log_event("SERVER", "API", "POST /api/upload - New project upload initiated")
         if 'file' not in request.files:
             return jsonify({"error": "Veuillez fournir un fichier ZIP de projet."}), 400
         
@@ -88,6 +94,7 @@ def upload_project():
         }
         db.add_project(new_project)
 
+        log_event("SERVER", "UPLOAD_SUCCESS", f"Enqueued project '{project_name}' (ID: {project_id}) for mode: {analysis_mode}, provider: {llm_provider}")
         analysis_queue.enqueue(project_id, file_path, file.filename, {
             "analysisMode": analysis_mode,
             "llmProvider": llm_provider,
@@ -108,6 +115,7 @@ def upload_project():
 @app.route('/api/projects/<id>/manual', methods=['POST'])
 def update_manual_criteria(id):
     try:
+        log_event("SERVER", "API", f"POST /api/projects/{id}/manual - Manual criteria update requested")
         body = request.get_json() or {}
         updates = body.get('updates')
         
@@ -148,6 +156,7 @@ def update_manual_criteria(id):
 @app.route('/api/projects/<id>', methods=['DELETE'])
 def delete_project(id):
     try:
+        log_event("SERVER", "API", f"DELETE /api/projects/{id} requested")
         project = db.get_project_by_id(id)
         if not project:
             return jsonify({"error": "Projet introuvable."}), 404

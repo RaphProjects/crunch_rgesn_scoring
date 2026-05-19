@@ -7,6 +7,7 @@ import time
 from datetime import datetime
 import db
 from analyzer import analyze_directory
+from logger import log_event
 
 class AnalysisQueue:
     def __init__(self):
@@ -21,7 +22,7 @@ class AnalysisQueue:
             "originalName": original_name,
             "llmConfig": llm_config
         })
-        print(f"[Queue] Job enqueued for project {project_id}. Queue size: {self.job_queue.qsize()}")
+        log_event("QUEUE", "ENQUEUE", f"Job enqueued for project {project_id}. Queue size: {self.job_queue.qsize()}")
         
         if self.worker_thread is None or not self.worker_thread.is_alive():
             self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
@@ -39,7 +40,7 @@ class AnalysisQueue:
             zip_file_path = job["zipFilePath"]
             llm_config = job["llmConfig"]
 
-            print(f"[Queue] Starting analysis for project {project_id}...")
+            log_event("QUEUE", "JOB_START", f"Starting analysis for project {project_id}...")
 
             try:
                 project = db.get_project_by_id(project_id)
@@ -52,7 +53,7 @@ class AnalysisQueue:
                 extract_dir = os.path.join(os.path.dirname(__file__), 'temp_extractions', project_id)
                 os.makedirs(extract_dir, exist_ok=True)
 
-                print(f"[Queue] Extracting zip file for project {project_id}...")
+                log_event("QUEUE", "EXTRACT", f"Extracting zip file for project {project_id}...")
                 file_count = 0
                 try:
                     with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
@@ -71,7 +72,7 @@ class AnalysisQueue:
                 except Exception as zip_error:
                     raise ValueError(f"Failed to extract project ZIP archive: {str(zip_error)}")
 
-                print(f"[Queue] Running static analyzer on extracted files...")
+                log_event("QUEUE", "ANALYZE_START", f"Running static/LLM analyzer on project {project_id}...")
                 criteria, llm_diagnostic = analyze_directory(extract_dir, llm_config)
 
                 scores = db.calculate_project_scores(criteria)
@@ -97,10 +98,10 @@ class AnalysisQueue:
                     project["llmDiagnostic"] = llm_diagnostic
 
                 db.update_project(project)
-                print(f"[Queue] Finished analysis for project {project_id}. Global Score: {scores['globalScore']}%")
+                log_event("QUEUE", "JOB_SUCCESS", f"Finished analysis for project {project_id}. Global Score: {scores['globalScore']}%")
 
             except Exception as error:
-                print(f"[Queue] Error processing project {project_id}: {error}")
+                log_event("QUEUE", "JOB_ERROR", f"Error processing project {project_id}: {error}")
                 project = db.get_project_by_id(project_id)
                 if project:
                     project["status"] = "Erreur"

@@ -4,6 +4,7 @@ import json
 import time
 import requests
 import ollama
+from logger import log_event
 
 def clean_json_string(json_text):
     in_string = False
@@ -76,6 +77,9 @@ def query_llm(config, system_prompt, user_prompt):
     provider = config.get('llmProvider')
     model = config.get('llmModel')
     api_key = config.get('llmApiKey')
+    model_name = model if model else 'default'
+
+    log_event("LLM_CLIENT", "REQUEST", f"Querying provider: {provider}, model: {model_name}", f"System Prompt:\n{system_prompt}\n\nUser Prompt:\n{user_prompt}")
 
     if provider == 'local':
         messages = [
@@ -89,7 +93,9 @@ def query_llm(config, system_prompt, user_prompt):
             options={'temperature': 0.1},
             format='json'
         )
-        return response['message']['content']
+        content = response['message']['content']
+        log_event("LLM_CLIENT", "RESPONSE", f"Success from provider: {provider}", f"Raw Response:\n{content}")
+        return content
 
     if provider == 'openai':
         url = 'https://api.openai.com/v1/chat/completions'
@@ -108,7 +114,9 @@ def query_llm(config, system_prompt, user_prompt):
         }
         res = requests.post(url, json=body, headers=headers, timeout=45)
         res.raise_for_status()
-        return res.json()['choices'][0]['message']['content']
+        content = res.json()['choices'][0]['message']['content']
+        log_event("LLM_CLIENT", "RESPONSE", f"Success from provider: {provider}", f"Raw Response:\n{content}")
+        return content
 
     if provider == 'mistral':
         url = 'https://api.mistral.ai/v1/chat/completions'
@@ -127,7 +135,9 @@ def query_llm(config, system_prompt, user_prompt):
         }
         res = requests.post(url, json=body, headers=headers, timeout=45)
         res.raise_for_status()
-        return res.json()['choices'][0]['message']['content']
+        content = res.json()['choices'][0]['message']['content']
+        log_event("LLM_CLIENT", "RESPONSE", f"Success from provider: {provider}", f"Raw Response:\n{content}")
+        return content
 
     if provider == 'anthropic':
         url = 'https://api.anthropic.com/v1/messages'
@@ -147,7 +157,9 @@ def query_llm(config, system_prompt, user_prompt):
         }
         res = requests.post(url, json=body, headers=headers, timeout=45)
         res.raise_for_status()
-        return res.json()['content'][0]['text']
+        content = res.json()['content'][0]['text']
+        log_event("LLM_CLIENT", "RESPONSE", f"Success from provider: {provider}", f"Raw Response:\n{content}")
+        return content
 
     raise ValueError(f"Fournisseur d'IA inconnu ou non supporté : {provider}")
 
@@ -207,6 +219,7 @@ def get_all_files(dir_path, array_of_files=None):
     return array_of_files
 
 def analyze_directory(dir_path, llm_config=None):
+    log_event("ANALYZER", "START", f"Starting static analysis for directory: {dir_path}")
     llm_diagnostic = None
     all_files = get_all_files(dir_path)
 
@@ -644,7 +657,7 @@ def analyze_directory(dir_path, llm_config=None):
             else: model = 'claude-3-5-haiku'
 
         try:
-            print(f"[Analyzer] Running LLM-assisted analysis using {provider}...")
+            log_event("ANALYZER", "LLM_START", f"Running LLM-assisted analysis using provider: {provider}, model: {model}")
             project_context = collect_project_context(dir_path, file_contents)
 
             llm_target_codes = [
@@ -699,8 +712,9 @@ Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'obj
                         results[code]["justification"] = f"[Audit IA] {parsed_data.get('justification') or initial['justification']}"
                         results[code]["findings"] = parsed_data.get('findings') if parsed_data.get('findings') and len(parsed_data['findings']) > 0 else initial['findings']
                         results[code]["type"] = 'auto' if parsed_data['status'] in ['Validé', 'Non-Validé', 'N/A'] else 'manual'
+                        log_event("ANALYZER", "LLM_CRITERION_SUCCESS", f"Criterion {code} updated by LLM: status={parsed_data['status']}")
                 except Exception as crit_error:
-                    print(f"[Analyzer] Erreur d'analyse LLM pour le critère {code}: {crit_error}")
+                    log_event("ANALYZER", "LLM_CRITERION_ERROR", f"Error refining criterion {code} with LLM: {crit_error}")
                     full_raw_output += f"--- Critère {code} (ERREUR) ---\n{str(crit_error)}\nOutput: {criterion_raw_output}\n\n"
 
             duration = int(time.time() * 1000) - start_time_ms
@@ -711,10 +725,10 @@ Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'obj
                 "responseTime": duration,
                 "rawOutput": full_raw_output.strip()
             }
-            print(f"[Analyzer] LLM-assisted multi-query analysis completed successfully in {duration}ms!")
+            log_event("ANALYZER", "LLM_COMPLETE", f"LLM-assisted analysis completed successfully in {duration}ms!")
 
         except Exception as llm_error:
-            print(f"[Analyzer] LLM analysis failed, falling back to Classical Static Analysis. Error: {llm_error}")
+            log_event("ANALYZER", "LLM_FAILED", f"LLM analysis failed, falling back to Classical Static Analysis: {llm_error}")
             duration = int(time.time() * 1000) - start_time_ms
             llm_diagnostic = {
                 "status": "failed",
