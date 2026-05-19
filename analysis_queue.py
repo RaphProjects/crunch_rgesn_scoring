@@ -139,29 +139,30 @@ class AnalysisQueue:
                 extract_dir = os.path.join(os.path.dirname(__file__), 'temp_extractions', project_id)
                 os.makedirs(extract_dir, exist_ok=True)
 
-                if url:
-                    log_event("QUEUE", "CRAWL_START", f"Crawling URL {url} for project {project_id}...")
-                    fetch_url_and_build_dir(url, extract_dir)
-                    file_count = len(os.listdir(extract_dir))
-                else:
+                file_count = 0
+
+                if zip_file_path:
                     log_event("QUEUE", "EXTRACT", f"Extracting zip file for project {project_id}...")
-                    file_count = 0
                     try:
                         with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
                             zip_ref.extractall(extract_dir)
-
-                        def count_files(dir_path):
-                            count = 0
-                            for entry in os.scandir(dir_path):
-                                if entry.is_dir():
-                                    count += count_files(entry.path)
-                                else:
-                                    count += 1
-                            return count
-
-                        file_count = count_files(extract_dir)
                     except Exception as zip_error:
                         raise ValueError(f"Failed to extract project ZIP archive: {str(zip_error)}")
+
+                if url:
+                    log_event("QUEUE", "CRAWL_START", f"Crawling URL {url} for project {project_id}...")
+                    fetch_url_and_build_dir(url, extract_dir)
+
+                def count_files(dir_path):
+                    count = 0
+                    for entry in os.scandir(dir_path):
+                        if entry.is_dir():
+                            count += count_files(entry.path)
+                        else:
+                            count += 1
+                    return count
+
+                file_count = count_files(extract_dir)
 
                 log_event("QUEUE", "ANALYZE_START", f"Running static/LLM analyzer on project {project_id}...")
                 criteria, llm_diagnostic = analyze_directory(extract_dir, llm_config)

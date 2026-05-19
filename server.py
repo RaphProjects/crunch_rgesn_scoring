@@ -67,10 +67,13 @@ def upload_project():
         log_event("SERVER", "API", "POST /api/upload - New project upload initiated")
         
         url = request.form.get('url', '').strip()
-        file = request.files.get('file')
+        file = request.files.get('file') if 'file' in request.files else None
         
-        if not file and not url:
-            return jsonify({"error": "Veuillez fournir un fichier ZIP ou une URL de site web à analyser."}), 400
+        has_file = file and file.filename != ''
+        has_url = bool(url)
+        
+        if not has_file and not has_url:
+            return jsonify({"error": "Veuillez fournir un fichier ZIP et/ou une URL de site web à analyser."}), 400
 
         project_id = str(uuid.uuid4())
         analysis_mode = request.form.get('analysisMode', 'regex')
@@ -81,25 +84,30 @@ def upload_project():
         file_path = None
         original_name = ""
         
-        if file and file.filename != '':
-            if not file.filename.lower().endswith('.zip'):
-                return jsonify({"error": "Uniquement les fichiers ZIP de projets sont acceptés."}), 400
-                
-            project_name = sanitize_no_email(request.form.get('name') or file.filename.replace('.zip', ''))
+        requested_name = request.form.get('name', '').strip()
+        
+        if has_file and not file.filename.lower().endswith('.zip'):
+            return jsonify({"error": "Uniquement les fichiers ZIP de projets sont acceptés."}), 400
+
+        if has_file:
             unique_suffix = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
             filename = f"file-{unique_suffix}.zip"
             file_path = os.path.join(uploads_dir, filename)
             file.save(file_path)
-            original_name = sanitize_no_email(file.filename)
-        elif url:
+            
+            if has_url:
+                original_name = f"{sanitize_no_email(file.filename)} + {url}"
+                project_name = sanitize_no_email(requested_name or file.filename.replace('.zip', ''))
+            else:
+                original_name = sanitize_no_email(file.filename)
+                project_name = sanitize_no_email(requested_name or file.filename.replace('.zip', ''))
+        else:
             domain = url
             if '://' in domain:
                 domain = domain.split('://')[1]
             domain = domain.split('/')[0]
-            project_name = sanitize_no_email(request.form.get('name') or f"Site {domain}")
             original_name = url
-        else:
-            return jsonify({"error": "Fichier ou URL invalide."}), 400
+            project_name = sanitize_no_email(requested_name or f"Site {domain}")
 
         new_project = {
             "id": project_id,

@@ -26,7 +26,7 @@
       <!-- Upload Section -->
       <div class="upload-box">
         <h3>Nouvelle Évaluation</h3>
-        <p class="upload-desc">Déposez l'archive ZIP de votre projet pour analyser sa conformité RGESN.</p>
+        <p class="upload-desc">Déposez l'archive ZIP et/ou saisissez l'URL de votre site pour analyser sa conformité RGESN.</p>
         
         <form id="uploadForm">
           <div class="form-group">
@@ -34,39 +34,29 @@
             <input type="text" id="projectName" placeholder="ex: Mon Application Web" required>
           </div>
 
-          <!-- Sélection de la Source -->
-          <div class="form-group">
-            <label>Source du Projet</label>
-            <div class="source-selector" style="display: flex; gap: 8px; margin-bottom: 12px; background: rgba(255, 255, 255, 0.05); padding: 4px; border-radius: 8px; border: 1px solid rgba(255, 255, 255, 0.1);">
-              <button type="button" class="source-btn active" id="sourceZipBtn" style="flex: 1; padding: 8px; border: none; background: rgba(255, 255, 255, 0.15); color: #fff; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;">
-                <i data-lucide="file-archive" style="width: 14px; height: 14px;"></i> Fichier ZIP
-              </button>
-              <button type="button" class="source-btn" id="sourceUrlBtn" style="flex: 1; padding: 8px; border: none; background: transparent; color: rgba(255, 255, 255, 0.7); border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px; transition: all 0.2s;">
-                <i data-lucide="globe" style="width: 14px; height: 14px;"></i> URL du Site
-              </button>
+          <div class="form-group" style="margin-bottom: 12px;">
+            <label>Fichier ZIP du Code (Optionnel)</label>
+            <div class="drag-area" id="dragArea" style="margin-top: 4px;">
+              <i data-lucide="upload-cloud" class="drag-icon"></i>
+              <span class="drag-text">Glissez & Déposez le ZIP ou</span>
+              <button type="button" class="btn btn-secondary btn-sm" id="browseBtn">Parcourir</button>
+              <input type="file" id="fileInput" accept=".zip" hidden>
             </div>
-          </div>
-          
-          <div class="drag-area" id="dragArea">
-            <i data-lucide="upload-cloud" class="drag-icon"></i>
-            <span class="drag-text">Glissez & Déposez le ZIP ou</span>
-            <button type="button" class="btn btn-secondary btn-sm" id="browseBtn">Parcourir</button>
-            <input type="file" id="fileInput" accept=".zip" hidden>
-          </div>
-          <div id="fileInfo" class="file-info hidden">
-            <i data-lucide="file-archive" class="file-icon"></i>
-            <span id="fileName">project.zip</span>
-            <button type="button" id="removeFileBtn"><i data-lucide="x"></i></button>
+            <div id="fileInfo" class="file-info hidden" style="margin-top: 4px;">
+              <i data-lucide="file-archive" class="file-icon"></i>
+              <span id="fileName">project.zip</span>
+              <button type="button" id="removeFileBtn"><i data-lucide="x"></i></button>
+            </div>
           </div>
 
           <!-- URL Input Container -->
-          <div id="urlInputContainer" class="form-group hidden" style="margin-top: 14px; margin-bottom: 14px;">
-            <label for="projectUrl">URL du Site Web</label>
-            <div class="url-input-wrapper" style="position: relative; display: flex; align-items: center;">
+          <div class="form-group" style="margin-bottom: 14px;">
+            <label for="projectUrl">URL du Site Web (Optionnel)</label>
+            <div class="url-input-wrapper" style="position: relative; display: flex; align-items: center; margin-top: 4px;">
               <i data-lucide="globe" style="position: absolute; left: 12px; width: 16px; height: 16px; color: rgba(255, 255, 255, 0.4);"></i>
               <input type="url" id="projectUrl" placeholder="https://exemple.com" style="width: 100%; padding: 10px 12px 10px 36px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #fff; font-size: 13px;">
             </div>
-            <p class="form-help" style="font-size: 11px; color: rgba(255, 255, 255, 0.5); margin-top: 6px; line-height: 1.4;">Le serveur téléchargera et analysera l'HTML, le CSS et le JS du site.</p>
+            <p class="form-help" style="font-size: 11px; color: rgba(255, 255, 255, 0.5); margin-top: 6px; line-height: 1.4;">Le site sera téléchargé et analysé conjointement avec le code source.</p>
           </div>
 
           <!-- Selection mode d'analyse -->

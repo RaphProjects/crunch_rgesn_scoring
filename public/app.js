@@ -16,57 +16,11 @@ const fileNameSpan = document.getElementById('fileName');
 const submitBtn = document.getElementById('submitBtn');
 const projectsList = document.getElementById('projectsList');
 
-// DOM Elements for Source Selector
-const sourceZipBtn = document.getElementById('sourceZipBtn');
-const sourceUrlBtn = document.getElementById('sourceUrlBtn');
-const urlInputContainer = document.getElementById('urlInputContainer');
 const projectUrlInput = document.getElementById('projectUrl');
-
-let currentSourceMode = 'zip'; // 'zip' or 'url'
-
-// Toggle between ZIP and URL modes
-sourceZipBtn.addEventListener('click', () => {
-  currentSourceMode = 'zip';
-  sourceZipBtn.classList.add('active');
-  sourceZipBtn.style.background = 'rgba(255, 255, 255, 0.15)';
-  sourceZipBtn.style.color = '#fff';
-  
-  sourceUrlBtn.classList.remove('active');
-  sourceUrlBtn.style.background = 'transparent';
-  sourceUrlBtn.style.color = 'rgba(255, 255, 255, 0.7)';
-  
-  if (fileInput.files.length > 0) {
-    fileInfo.classList.remove('hidden');
-    dragArea.classList.add('hidden');
-  } else {
-    dragArea.classList.remove('hidden');
-    fileInfo.classList.add('hidden');
-  }
-  
-  urlInputContainer.classList.add('hidden');
-  projectUrlInput.removeAttribute('required');
-});
-
-sourceUrlBtn.addEventListener('click', () => {
-  currentSourceMode = 'url';
-  sourceUrlBtn.classList.add('active');
-  sourceUrlBtn.style.background = 'rgba(255, 255, 255, 0.15)';
-  sourceUrlBtn.style.color = '#fff';
-  
-  sourceZipBtn.classList.remove('active');
-  sourceZipBtn.style.background = 'transparent';
-  sourceZipBtn.style.color = 'rgba(255, 255, 255, 0.7)';
-  
-  dragArea.classList.add('hidden');
-  fileInfo.classList.add('hidden');
-  
-  urlInputContainer.classList.remove('hidden');
-  projectUrlInput.setAttribute('required', 'true');
-});
 
 // Auto-fill project name as user types a URL
 projectUrlInput.addEventListener('input', () => {
-  if (currentSourceMode === 'url' && projectUrlInput.value) {
+  if (projectUrlInput.value) {
     try {
       let urlStr = projectUrlInput.value;
       if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://')) {
@@ -246,18 +200,18 @@ uploadForm.addEventListener('submit', async (e) => {
   const formData = new FormData();
   formData.append('name', projectNameInput.value);
 
-  if (currentSourceMode === 'zip') {
-    if (fileInput.files.length === 0) {
-      alert("Veuillez sélectionner un fichier ZIP.");
-      return;
-    }
+  const hasFile = fileInput.files.length > 0;
+  const urlValue = projectUrlInput.value.trim();
+
+  if (!hasFile && !urlValue) {
+    alert("Veuillez sélectionner un fichier ZIP et/ou saisir une URL de site web.");
+    return;
+  }
+
+  if (hasFile) {
     formData.append('file', fileInput.files[0]);
-  } else {
-    const urlValue = projectUrlInput.value.trim();
-    if (!urlValue) {
-      alert("Veuillez saisir une URL de site web.");
-      return;
-    }
+  }
+  if (urlValue) {
     formData.append('url', urlValue);
   }
 
@@ -293,9 +247,6 @@ uploadForm.addEventListener('submit', async (e) => {
     projectNameInput.value = '';
     fileInfo.classList.add('hidden');
     dragArea.classList.remove('hidden');
-
-    // Reset to ZIP mode UI
-    sourceZipBtn.click();
 
     // Reload projects list and highlight new project
     await loadProjectsList();
