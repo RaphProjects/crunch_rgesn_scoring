@@ -65,28 +65,41 @@ def get_project_by_id(id):
 def upload_project():
     try:
         log_event("SERVER", "API", "POST /api/upload - New project upload initiated")
-        if 'file' not in request.files:
-            return jsonify({"error": "Veuillez fournir un fichier ZIP de projet."}), 400
         
-        file = request.files['file']
-        if file.filename == '':
-            return jsonify({"error": "Fichier vide ou invalide."}), 400
+        url = request.form.get('url', '').strip()
+        file = request.files.get('file')
+        
+        if not file and not url:
+            return jsonify({"error": "Veuillez fournir un fichier ZIP ou une URL de site web à analyser."}), 400
 
-        if not file.filename.lower().endswith('.zip'):
-            return jsonify({"error": "Uniquement les fichiers ZIP de projets sont acceptés."}), 400
-
-        project_name = sanitize_no_email(request.form.get('name') or file.filename.replace('.zip', ''))
         project_id = str(uuid.uuid4())
-
         analysis_mode = request.form.get('analysisMode', 'regex')
         llm_provider = request.form.get('llmProvider', '')
         llm_api_key = request.form.get('llmApiKey', '')
         llm_model = request.form.get('llmModel', '')
 
-        unique_suffix = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
-        filename = f"file-{unique_suffix}.zip"
-        file_path = os.path.join(uploads_dir, filename)
-        file.save(file_path)
+        file_path = None
+        original_name = ""
+        
+        if file and file.filename != '':
+            if not file.filename.lower().endswith('.zip'):
+                return jsonify({"error": "Uniquement les fichiers ZIP de projets sont acceptés."}), 400
+                
+            project_name = sanitize_no_email(request.form.get('name') or file.filename.replace('.zip', ''))
+            unique_suffix = f"{int(time.time() * 1000)}-{uuid.uuid4().hex[:8]}"
+            filename = f"file-{unique_suffix}.zip"
+            file_path = os.path.join(uploads_dir, filename)
+            file.save(file_path)
+            original_name = sanitize_no_email(file.filename)
+        elif url:
+            domain = url
+            if '://' in domain:
+                domain = domain.split('://')[1]
+            domain = domain.split('/')[0]
+            project_name = sanitize_no_email(request.form.get('name') or f"Site {domain}")
+            original_name = url
+        else:
+            return jsonify({"error": "Fichier ou URL invalide."}), 400
 
         new_project = {
             "id": project_id,
@@ -107,12 +120,12 @@ def upload_project():
         db.add_project(new_project)
 
         log_event("SERVER", "UPLOAD_SUCCESS", f"Enqueued project '{project_name}' (ID: {project_id}) for mode: {analysis_mode}, provider: {llm_provider}")
-        analysis_queue.enqueue(project_id, file_path, sanitize_no_email(file.filename), {
+        analysis_queue.enqueue(project_id, file_path, original_name, {
             "analysisMode": analysis_mode,
             "llmProvider": llm_provider,
             "llmApiKey": llm_api_key,
             "llmModel": llm_model
-        })
+        }, url=url if url else None)
 
         return jsonify({
             "success": True,

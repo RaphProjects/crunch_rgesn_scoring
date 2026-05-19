@@ -4,10 +4,94 @@ import zipfile
 import threading
 import queue
 import time
+import re
+import json
+import urllib.parse
+import requests
 from datetime import datetime
 import db
 from analyzer import analyze_directory
 from logger import log_event
+
+def fetch_url_and_build_dir(url, extract_dir):
+    log_event("URL_CRAWLER", "START", f"Crawling URL: {url} into {extract_dir}")
+    os.makedirs(extract_dir, exist_ok=True)
+    
+    if not url.startswith('http://') and not url.startswith('https://'):
+        url = 'https://' + url
+
+    headers = {
+        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
+        'Accept-Encoding': 'gzip, deflate, br'
+    }
+    
+    start_time = time.time()
+    res = requests.get(url, headers=headers, timeout=15)
+    response_time_ms = int((time.time() - start_time) * 1000)
+    res.raise_for_status()
+    
+    html_content = res.text
+    resp_headers = res.headers
+    
+    headers_comment = "\n<!-- HTTP_HEADERS_START\n"
+    for k, v in resp_headers.items():
+        headers_comment += f"{k}: {v}\n"
+    headers_comment += "HTTP_HEADERS_END -->\n"
+    
+    full_html = headers_comment + f"<!-- Response Time: {response_time_ms}ms -->\n" + html_content
+    
+    index_path = os.path.join(extract_dir, 'index.html')
+    with open(index_path, 'w', encoding='utf-8') as f:
+        f.write(full_html)
+        
+    perf_log = {
+        "url": url,
+        "status_code": res.status_code,
+        "responseTimeMs": response_time_ms,
+        "sizeBytes": len(res.content),
+        "headers": dict(resp_headers)
+    }
+    with open(os.path.join(extract_dir, 'performance.json'), 'w', encoding='utf-8') as f:
+        json.dump(perf_log, f, indent=2)
+        
+    css_urls = re.findall(r'<link[^>]+rel=["\']stylesheet["\'][^>]+href=["\']([^"\']+)["\']', html_content, re.IGNORECASE)
+    css_urls += re.findall(r'<link[^>]+href=["\']([^"\']+)["\'][^>]+rel=["\']stylesheet["\']', html_content, re.IGNORECASE)
+    
+    js_urls = re.findall(r'<script[^>]+src=["\']([^"\']+)["\']', html_content, re.IGNORECASE)
+    
+    css_urls = list(set(css_urls))
+    js_urls = list(set(js_urls))
+    
+    fetched_count = 0
+    for css_rel in css_urls[:3]:
+        try:
+            css_url = urllib.parse.urljoin(url, css_rel)
+            css_res = requests.get(css_url, headers=headers, timeout=5)
+            if css_res.status_code == 200:
+                safe_name = "".join([c if c.isalnum() else "_" for c in css_rel.split('/')[-1]])
+                if not safe_name.endswith('.css'):
+                    safe_name += '.css'
+                with open(os.path.join(extract_dir, safe_name), 'w', encoding='utf-8') as f:
+                    f.write(css_res.text)
+                fetched_count += 1
+        except Exception as e:
+            log_event("URL_CRAWLER", "CSS_FETCH_ERROR", f"Failed to fetch CSS {css_rel}: {e}")
+            
+    for js_rel in js_urls[:3]:
+        try:
+            js_url = urllib.parse.urljoin(url, js_rel)
+            js_res = requests.get(js_url, headers=headers, timeout=5)
+            if js_res.status_code == 200:
+                safe_name = "".join([c if c.isalnum() else "_" for c in js_rel.split('/')[-1]])
+                if not safe_name.endswith('.js'):
+                    safe_name += '.js'
+                with open(os.path.join(extract_dir, safe_name), 'w', encoding='utf-8') as f:
+                    f.write(js_res.text)
+                fetched_count += 1
+        except Exception as e:
+            log_event("URL_CRAWLER", "JS_FETCH_ERROR", f"Failed to fetch JS {js_rel}: {e}")
+            
+    log_event("URL_CRAWLER", "SUCCESS", f"Successfully crawled {url}. Saved HTML and {fetched_count} assets.")
 
 class AnalysisQueue:
     def __init__(self):
@@ -15,12 +99,13 @@ class AnalysisQueue:
         self.processing = False
         self.worker_thread = None
 
-    def enqueue(self, project_id, zip_file_path, original_name, llm_config=None):
+    def enqueue(self, project_id, zip_file_path, original_name, llm_config=None, url=None):
         self.job_queue.put({
             "projectId": project_id,
             "zipFilePath": zip_file_path,
             "originalName": original_name,
-            "llmConfig": llm_config
+            "llmConfig": llm_config,
+            "url": url
         })
         log_event("QUEUE", "ENQUEUE", f"Job enqueued for project {project_id}. Queue size: {self.job_queue.qsize()}")
         
@@ -39,6 +124,7 @@ class AnalysisQueue:
             project_id = job["projectId"]
             zip_file_path = job["zipFilePath"]
             llm_config = job["llmConfig"]
+            url = job.get("url")
 
             log_event("QUEUE", "JOB_START", f"Starting analysis for project {project_id}...")
 
@@ -53,24 +139,29 @@ class AnalysisQueue:
                 extract_dir = os.path.join(os.path.dirname(__file__), 'temp_extractions', project_id)
                 os.makedirs(extract_dir, exist_ok=True)
 
-                log_event("QUEUE", "EXTRACT", f"Extracting zip file for project {project_id}...")
-                file_count = 0
-                try:
-                    with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
-                        zip_ref.extractall(extract_dir)
+                if url:
+                    log_event("QUEUE", "CRAWL_START", f"Crawling URL {url} for project {project_id}...")
+                    fetch_url_and_build_dir(url, extract_dir)
+                    file_count = len(os.listdir(extract_dir))
+                else:
+                    log_event("QUEUE", "EXTRACT", f"Extracting zip file for project {project_id}...")
+                    file_count = 0
+                    try:
+                        with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
+                            zip_ref.extractall(extract_dir)
 
-                    def count_files(dir_path):
-                        count = 0
-                        for entry in os.scandir(dir_path):
-                            if entry.is_dir():
-                                count += count_files(entry.path)
-                            else:
-                                count += 1
-                        return count
+                        def count_files(dir_path):
+                            count = 0
+                            for entry in os.scandir(dir_path):
+                                if entry.is_dir():
+                                    count += count_files(entry.path)
+                                else:
+                                    count += 1
+                            return count
 
-                    file_count = count_files(extract_dir)
-                except Exception as zip_error:
-                    raise ValueError(f"Failed to extract project ZIP archive: {str(zip_error)}")
+                        file_count = count_files(extract_dir)
+                    except Exception as zip_error:
+                        raise ValueError(f"Failed to extract project ZIP archive: {str(zip_error)}")
 
                 log_event("QUEUE", "ANALYZE_START", f"Running static/LLM analyzer on project {project_id}...")
                 criteria, llm_diagnostic = analyze_directory(extract_dir, llm_config)
@@ -80,7 +171,7 @@ class AnalysisQueue:
                 print(f"[Queue] Cleaning up temporary files for {project_id}...")
                 try:
                     shutil.rmtree(extract_dir, ignore_errors=True)
-                    if os.path.exists(zip_file_path):
+                    if zip_file_path and os.path.exists(zip_file_path):
                         os.remove(zip_file_path)
                 except Exception as cleanup_error:
                     print(f"[Queue] Error during temp file cleanup: {cleanup_error}")
