@@ -687,7 +687,7 @@ Format attendu pour ton JSON :
 
 CONSIGNES DE RIGUEUR EXTRÊME :
 1. Ne valide pas paresseusement. Sois extrêmement critique : si le code manque de configuration ou présente un anti-pattern flagrant, retourne "Non-Validé". 
-2. Si le projet n'utilise manifestement pas la fonctionnalité associée (ex: pas de vidéo pour les critères Cont1-3, pas d'IA pour Algo3-6), retourne "N/A".
+2. Si le projet n'utilise manifestement pas la fonctionnalité associée (ex: pas de vidéo pour les critères Cont1-3, pas d'IA pour Algo3-6), retourne ABSOLUMENT ET IMPÉRATIVEMENT "N/A". Ne mets jamais "Non-Validé" si le service ne comporte aucune vidéo ou aucun modèle d'IA !
 3. Si les éléments ne te permettent pas de conclure avec certitude, utilise "Manuel"."""
 
                 user_prompt = f"""Détails structurels et extraits de fichiers du projet :
@@ -708,11 +708,19 @@ Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'obj
                     parsed_data = extract_json(criterion_raw_output)
 
                     if parsed_data and parsed_data.get('status'):
-                        results[code]["status"] = parsed_data['status']
+                        new_status = parsed_data['status']
+                        
+                        # Programmatic post-processing: enforce N/A for video / ML if not present
+                        if code in ['Cont1', 'Cont2', 'Cont3'] and not has_videos:
+                            new_status = 'N/A'
+                        if code in ['Algo3', 'Algo6'] and not has_ml:
+                            new_status = 'N/A'
+                            
+                        results[code]["status"] = new_status
                         results[code]["justification"] = f"[Audit IA] {parsed_data.get('justification') or initial['justification']}"
                         results[code]["findings"] = parsed_data.get('findings') if parsed_data.get('findings') and len(parsed_data['findings']) > 0 else initial['findings']
-                        results[code]["type"] = 'auto' if parsed_data['status'] in ['Validé', 'Non-Validé', 'N/A'] else 'manual'
-                        log_event("ANALYZER", "LLM_CRITERION_SUCCESS", f"Criterion {code} updated by LLM: status={parsed_data['status']}")
+                        results[code]["type"] = 'auto' if new_status in ['Validé', 'Non-Validé', 'N/A'] else 'manual'
+                        log_event("ANALYZER", "LLM_CRITERION_SUCCESS", f"Criterion {code} updated by LLM: status={new_status}")
                 except Exception as crit_error:
                     log_event("ANALYZER", "LLM_CRITERION_ERROR", f"Error refining criterion {code} with LLM: {crit_error}")
                     full_raw_output += f"--- Critère {code} (ERREUR) ---\n{str(crit_error)}\nOutput: {criterion_raw_output}\n\n"

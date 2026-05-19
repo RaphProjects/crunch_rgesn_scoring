@@ -4,6 +4,9 @@ let currentProjectId = null;
 let currentProject = null;
 let criteriaDefinitions = [];
 let pollingInterval = null;
+let currentProjectSummary = null;
+let currentProjectSummaryId = null;
+let isFetchingSummary = false;
 
 // DOM Elements
 const dragArea = document.getElementById('dragArea');
@@ -58,6 +61,7 @@ const projectStatusBadge = document.getElementById('projectStatusBadge');
 const projectDate = document.getElementById('projectDate');
 const projectFiles = document.getElementById('projectFiles');
 const deleteProjectBtn = document.getElementById('deleteProjectBtn');
+const downloadPdfBtn = document.getElementById('downloadPdfBtn');
 
 const projectErrorAlert = document.getElementById('projectErrorAlert');
 const projectErrorMsg = document.getElementById('projectErrorMsg');
@@ -329,6 +333,8 @@ function renderProjectsList() {
 // Select a Project
 async function selectProject(projectId) {
   currentProjectId = projectId;
+  currentProjectSummary = null;
+  currentProjectSummaryId = null;
   
   // Highlight active sidebar item
   const items = document.querySelectorAll('.project-item');
@@ -387,6 +393,7 @@ async function loadProjectDetails() {
       projectErrorAlert.classList.add('hidden');
       projectProcessingAlert.classList.remove('hidden');
       projectDashboardContent.classList.add('hidden');
+      if (downloadPdfBtn) downloadPdfBtn.classList.add('hidden');
       const diagCard = document.getElementById('llmDiagnosticCard');
       if (diagCard) diagCard.classList.add('hidden');
       
@@ -401,6 +408,7 @@ async function loadProjectDetails() {
       }
       projectProcessingAlert.classList.add('hidden');
       projectDashboardContent.classList.add('hidden');
+      if (downloadPdfBtn) downloadPdfBtn.classList.add('hidden');
       const diagCard = document.getElementById('llmDiagnosticCard');
       if (diagCard) diagCard.classList.add('hidden');
       
@@ -415,6 +423,8 @@ async function loadProjectDetails() {
       projectProcessingAlert.classList.add('hidden');
       projectErrorAlert.classList.add('hidden');
       projectDashboardContent.classList.remove('hidden');
+      // Show PDF download button
+      if (downloadPdfBtn) downloadPdfBtn.classList.remove('hidden');
 
       // LLM Diagnostics Rendering
       const diagCard = document.getElementById('llmDiagnosticCard');
@@ -518,31 +528,50 @@ function renderDashboard() {
     `;
   }).join('');
 
-  // 3. Render Quick Wins (Prioritaire + Faible difficulty + Currently NOT Validated)
-  const quickWins = Object.values(currentProject.criteria).filter(crit => 
-    crit.priority.toLowerCase().includes('prioritaire') && 
-    crit.difficulty.toLowerCase().includes('faible') &&
+  // 3. Render Plan d'action (ALL currently NOT Validated criteria)
+  const nonValidatedCriteria = Object.values(currentProject.criteria).filter(crit => 
     crit.status === 'Non-Validé'
   );
 
-  if (quickWins.length === 0) {
+  const llmSummaryContainer = document.getElementById('llmSummaryContainer');
+
+  if (nonValidatedCriteria.length === 0) {
     quickWinsDeck.innerHTML = `
       <div class="empty-state" style="grid-column: 1 / -1; padding: 20px;">
         <i data-lucide="check-circle" style="color: var(--color-green);"></i>
-        <p>Excellent ! Aucun Quick Win manquant. Tous vos critères prioritaires simples sont validés !</p>
+        <p>Excellent ! Aucun critère n'est non-validé. Votre projet est 100% conforme sur les critères applicables !</p>
       </div>
     `;
+    if (llmSummaryContainer) {
+      llmSummaryContainer.classList.add('hidden');
+    }
   } else {
-    quickWinsDeck.innerHTML = quickWins.map(qw => {
+    if (llmSummaryContainer) {
+      llmSummaryContainer.classList.remove('hidden');
+    }
+    
+    // Sort criteria by Priority (Prioritaire first) and then Difficulty (Faible first)
+    nonValidatedCriteria.sort((a, b) => {
+      const aPrio = a.priority.toLowerCase().includes('prioritaire') ? 0 : 1;
+      const bPrio = b.priority.toLowerCase().includes('prioritaire') ? 0 : 1;
+      if (aPrio !== bPrio) return aPrio - bPrio;
+      
+      const difficultyOrder = { 'faible': 0, 'moyen': 1, 'fort': 2 };
+      const aDiff = difficultyOrder[a.difficulty.toLowerCase()] ?? 1;
+      const bDiff = difficultyOrder[b.difficulty.toLowerCase()] ?? 1;
+      return aDiff - bDiff;
+    });
+
+    quickWinsDeck.innerHTML = nonValidatedCriteria.map(qw => {
       return `
         <div class="quick-win-card">
           <div class="quick-win-header">
             <span class="quick-win-code">${qw.code}</span>
             <span class="quick-win-cat">${escapeHTML(qw.category)}</span>
           </div>
-          <p class="quick-win-text">${escapeHTML(qw.text)}</p>
+          <p class="quick-win-text">${escapeHTML(getNegativeFormulation(qw.code, qw.text))}</p>
           <div class="quick-win-footer">
-            <span class="quick-win-badge"><i data-lucide="award"></i> Prioritaire (Faible)</span>
+            <span class="quick-win-badge"><i data-lucide="award"></i> ${escapeHTML(qw.priority)} (${escapeHTML(qw.difficulty)})</span>
             <button class="quick-win-action-btn" onclick="openCriterionInExplorer('${qw.code}')">
               Optimiser <i data-lucide="arrow-right"></i>
             </button>
@@ -550,6 +579,9 @@ function renderDashboard() {
         </div>
       `;
     }).join('');
+    
+    // Request LLM summary of Action Plan
+    fetchLlmActionPlanSummary();
   }
 
   // 4. Render Criteria Explorer
@@ -798,6 +830,38 @@ deleteProjectBtn.addEventListener('click', async () => {
   }
 });
 
+// PDF Download handler
+if (downloadPdfBtn) {
+  downloadPdfBtn.addEventListener('click', async () => {
+    if (!currentProjectId) return;
+    const originalHTML = downloadPdfBtn.innerHTML;
+    downloadPdfBtn.disabled = true;
+    downloadPdfBtn.innerHTML = '<span class="spinner" style="width:13px;height:13px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></span> Génération...';
+    try {
+      const res = await fetch(`/api/projects/${currentProjectId}/pdf`);
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || 'Erreur serveur lors de la génération du PDF.');
+      }
+      const blob = await res.blob();
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      const projectName = (currentProject && currentProject.name) ? currentProject.name.replace(/\s+/g, '_').slice(0, 40) : 'rapport';
+      a.download = `rapport_rgesn_${projectName}.pdf`;
+      document.body.appendChild(a);
+      a.click();
+      setTimeout(() => { URL.revokeObjectURL(url); a.remove(); }, 1000);
+    } catch (err) {
+      alert('Impossible de générer le rapport PDF : ' + err.message);
+    } finally {
+      downloadPdfBtn.disabled = false;
+      downloadPdfBtn.innerHTML = originalHTML;
+      lucide.createIcons();
+    }
+  });
+}
+
 function showWelcomeView() {
   currentProjectId = null;
   currentProject = null;
@@ -838,6 +902,132 @@ function escapeHTML(str) {
     .replace(/'/g, '&#039;');
 }
 
+async function fetchLlmActionPlanSummary(force = false) {
+  if (isFetchingSummary) return;
+  if (!currentProject) return;
+
+  const textEl = document.getElementById('llmSummaryText');
+  if (!textEl) return;
+
+  if (!force && currentProjectSummary && currentProjectSummaryId === currentProjectId) {
+    textEl.innerHTML = currentProjectSummary;
+    return;
+  }
+
+  const nonValidatedCriteria = Object.values(currentProject.criteria).filter(crit => 
+    crit.status === 'Non-Validé'
+  );
+
+  if (nonValidatedCriteria.length === 0) {
+    return;
+  }
+
+  isFetchingSummary = true;
+  currentProjectSummaryId = currentProjectId;
+
+  textEl.innerHTML = `
+    <div style="display: flex; align-items: center; gap: 8px;">
+      <div class="spinner" style="width: 14px; height: 14px; border-width: 2px; display: inline-block;"></div>
+      <span>L'IA analyse vos ${nonValidatedCriteria.length} critères non-conformes pour rédiger votre plan de route...</span>
+    </div>
+  `;
+
+  try {
+    const provider = llmProvider.value;
+    const apiKey = llmApiKey.value;
+    const model = llmModel.value;
+
+    const res = await fetch(`/api/projects/${currentProjectId}/summary`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json'
+      },
+      body: JSON.stringify({
+        llmProvider: provider,
+        llmApiKey: apiKey,
+        llmModel: model
+      })
+    });
+
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur de génération.");
+
+    currentProjectSummary = parseMarkdownToHTML(data.summary);
+    textEl.innerHTML = currentProjectSummary;
+    lucide.createIcons();
+  } catch (err) {
+    console.error("Action plan summary failed:", err);
+    currentProjectSummary = `
+      <div style="color: #f87171; display: flex; align-items: flex-start; gap: 6px;">
+        <i data-lucide="alert-circle" style="width: 16px; height: 16px; flex-shrink: 0; margin-top: 2px;"></i>
+        <span>Génération impossible : ${escapeHTML(err.message)}</span>
+      </div>
+    `;
+    textEl.innerHTML = currentProjectSummary;
+    lucide.createIcons();
+  } finally {
+    isFetchingSummary = false;
+  }
+}
+
+function parseMarkdownToHTML(markdown) {
+  if (!markdown) return '';
+
+  let html = markdown;
+
+  // Escape HTML characters except for formatting we will add
+  html = escapeHTML(html);
+
+  // Restore basic markdown formatting after escaping
+
+  // Headers (### to #)
+  html = html.replace(/^### (.*?)$/gm, '<h4 style="color: #c084fc; font-weight: 700; font-size: 13.5px; margin-top: 14px; margin-bottom: 6px;">$1</h4>');
+  html = html.replace(/^## (.*?)$/gm, '<h3 style="color: #c084fc; font-weight: 700; font-size: 14px; margin-top: 16px; margin-bottom: 8px;">$1</h3>');
+  html = html.replace(/^# (.*?)$/gm, '<h2 style="color: #c084fc; font-weight: 800; font-size: 15px; margin-top: 18px; margin-bottom: 10px;">$1</h2>');
+
+  // Bold
+  html = html.replace(/\*\*(.*?)\*\*/g, '<strong style="color: #f1f5f9; font-weight: 600;">$1</strong>');
+
+  // Inline Code
+  html = html.replace(/`(.*?)`/g, '<code style="font-family: monospace; padding: 2px 4px; background: rgba(255, 255, 255, 0.08); border-radius: 4px; color: #a78bfa;">$1</code>');
+
+  // Lists
+  html = html.replace(/^\s*[-*]\s+(.*?)$/gm, '<li style="margin-left: 16px; list-style-type: disc; margin-bottom: 4px; color: var(--text-muted);">$1</li>');
+
+  // Paragraphs
+  html = html.split('\n\n').map(p => {
+    if (p.trim().startsWith('<li') || p.trim().startsWith('<h')) return p;
+    return `<p style="margin-bottom: 10px; color: var(--text-muted);">${p}</p>`;
+  }).join('\n');
+
+  return html;
+}
+
+function getNegativeFormulation(code, originalText) {
+  const formulations = {
+    'Str5': "Le service n'a pas été conçu avec des technologies interopérables standardisées (utilisation de technologies spécifiques ou fermées).",
+    'Spec1': "Le service n'a pas défini la liste des profils de matériels ou navigateurs cibles de ses utilisateurs.",
+    'Spec2': "Le service n'est pas utilisable sur d'anciens modèles de terminaux.",
+    'Spec3': "Le service n'est pas utilisable sur d'anciennes versions de navigateurs ou de systèmes d'exploitation.",
+    'Spec4': "Le service ne s'adapte pas de manière fluide aux différents types de terminaux d'affichage (manque de responsive design).",
+    'Spec5': "Le service n'a pas prévu de stratégie de maintenance ou de décommissionnement technique.",
+    'Uxui1': "Le service contient des médias ou animations dont la lecture automatique (autoplay) est active.",
+    'Uxui2': "Le service a recours à un défilement infini pour charger son contenu.",
+    'Uxui3': "Le service utilise des notifications système sans laisser la possibilité simple de les désactiver.",
+    'Cont1': "Le service n'utilise pas de définition de vidéo adaptée au contenu et au contexte de visualisation.",
+    'Cont2': "Le service propose des vidéos dont le mode de compression n'est pas optimal ou efficace.",
+    'Cont3': "Le service ne propose pas de mode d'écoute seule (sans vidéo) pour ses vidéos.",
+    'Bck2': "Le service n'a pas recours à un système de cache serveur pour ses données les plus utilisées.",
+    'Bck3': "Le service ne met pas en place de durées limites de conservation sur ses données.",
+    'Frnt1': "Le service ne s'astreint pas à un poids maximum et une limite de requête par écran.",
+    'Frnt2': "Le service n'utilise pas de mécanismes de mise en cache client pour ses ressources.",
+    'Algo3': "Le service ne met pas en place de mécanismes visant à limiter la quantité d'entraînement nécessaire à ses modèles d'IA.",
+    'Algo6': "Le service n'utilise pas de stratégie d'inférence optimisée pour ses algorithmes d'IA."
+  };
+  
+  return formulations[code] || originalText;
+}
+
 // Init
 async function init() {
   // Restore analysis options from localStorage
@@ -874,6 +1064,14 @@ async function init() {
         toggleBtn.innerHTML = `<i data-lucide="chevron-right" class="btn-icon"></i> Voir la réponse brute de l'IA (JSON)`;
       }
       lucide.createIcons();
+    });
+  }
+
+  // Refresh Action Plan summary button click listener
+  const refreshActionPlanBtn = document.getElementById('refreshActionPlanBtn');
+  if (refreshActionPlanBtn) {
+    refreshActionPlanBtn.addEventListener('click', () => {
+      fetchLlmActionPlanSummary(true);
     });
   }
 

@@ -130,6 +130,9 @@
             </p>
           </div>
           <div class="project-actions">
+                        <button class="btn btn-primary btn-sm hidden" id="downloadPdfBtn">
+              <i data-lucide="download" class="btn-icon"></i> Télécharger le Rapport PDF
+            </button>
             <button class="btn btn-danger btn-outline" id="deleteProjectBtn">
               <i data-lucide="trash-2"></i> Supprimer
             </button>
@@ -197,16 +200,33 @@
             </div>
           </div>
 
-          <!-- Quick Wins Section -->
+          <!-- Action Plan Section -->
           <div class="card card-quick-wins full-width">
             <div class="card-header">
               <div class="header-title">
-                <h2><i data-lucide="zap" class="icon-zap"></i> Quick Wins (Recommandations Prioritaires)</h2>
-                <span class="tag-quick-wins">Ratio Effort/Impact Maximal</span>
+                <h2><i data-lucide="list-todo" class="icon-zap"></i> Plan d'Action (Critères Non-Validés)</h2>
+                <span class="tag-quick-wins" style="background: rgba(59, 130, 246, 0.15); color: #60a5fa; border-color: rgba(59, 130, 246, 0.3);">Correctifs requis</span>
               </div>
-              <p class="subtitle">Critères non conformes de niveau de <strong>Priorité : Prioritaire</strong> et de <strong>Difficulté : Faible</strong>. Corrigez-les en priorité.</p>
+              <p class="subtitle">Tous les critères identifiés comme <strong>Non-Validé</strong> lors de l'audit. Corrigez-les pour remonter votre score.</p>
             </div>
             <div class="card-body">
+              <!-- LLM Action Plan Summary Container -->
+              <div id="llmSummaryContainer" class="llm-summary-box" style="margin-bottom: 24px; padding: 20px; background: rgba(139, 92, 246, 0.05); border: 1px dashed rgba(139, 92, 246, 0.25); border-radius: var(--border-radius-md);">
+                <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
+                  <div style="display: flex; align-items: center; gap: 8px;">
+                    <i data-lucide="sparkles" style="color: #a78bfa; width: 18px; height: 18px;"></i>
+                    <h3 style="margin: 0; font-size: 14px; font-weight: 700; color: #c084fc; text-transform: uppercase; letter-spacing: 0.05em;">Synthèse & Plan de Route de l'IA</h3>
+                  </div>
+                  <button type="button" id="refreshActionPlanBtn" style="background: none; border: none; color: #a78bfa; cursor: pointer; display: flex; align-items: center; gap: 4px; font-size: 11px; font-weight: 600; padding: 2px 6px; border-radius: 4px; transition: all 0.2s;" onmouseover="this.style.background='rgba(167, 139, 250, 0.15)'" onmouseout="this.style.background='none'">
+                    <i data-lucide="refresh-cw" style="width: 12px; height: 12px;"></i> Rafraîchir
+                  </button>
+                </div>
+                <div id="llmSummaryText" style="font-size: 13px; line-height: 1.6; color: var(--text-muted);">
+                  <div class="spinner" style="width: 16px; height: 16px; border-width: 2px; display: inline-block; vertical-align: middle; margin-right: 8px;"></div>
+                  Génération du plan d'action intelligent en cours...
+                </div>
+              </div>
+
               <div id="quickWinsDeck" class="quick-wins-deck">
                 <!-- Populated by JavaScript -->
               </div>
