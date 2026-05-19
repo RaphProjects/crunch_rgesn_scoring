@@ -1,4 +1,5 @@
 import os
+import re
 import time
 import json
 import uuid
@@ -7,6 +8,17 @@ from flask import Flask, send_from_directory, request, jsonify
 import db
 from analysis_queue import analysis_queue
 from logger import log_event
+
+def sanitize_no_email(name):
+    if not name:
+        return ""
+    email_regex = r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+'
+    sanitized = re.sub(email_regex, 'Projet', name)
+    sanitized = re.sub(r'\S+@\S+', 'Projet', sanitized)
+    sanitized = sanitized.strip(" -_.,()")
+    if sanitized.strip().lower() in ['projet', '']:
+        return "Projet Anonyme"
+    return sanitized
 
 app = Flask(__name__, static_folder='public', static_url_path='')
 log_event("SERVER", "STARTUP", "Flask application initialized")
@@ -63,7 +75,7 @@ def upload_project():
         if not file.filename.lower().endswith('.zip'):
             return jsonify({"error": "Uniquement les fichiers ZIP de projets sont acceptés."}), 400
 
-        project_name = request.form.get('name') or file.filename.replace('.zip', '') or "Projet Anonyme"
+        project_name = sanitize_no_email(request.form.get('name') or file.filename.replace('.zip', ''))
         project_id = str(uuid.uuid4())
 
         analysis_mode = request.form.get('analysisMode', 'regex')
@@ -95,7 +107,7 @@ def upload_project():
         db.add_project(new_project)
 
         log_event("SERVER", "UPLOAD_SUCCESS", f"Enqueued project '{project_name}' (ID: {project_id}) for mode: {analysis_mode}, provider: {llm_provider}")
-        analysis_queue.enqueue(project_id, file_path, file.filename, {
+        analysis_queue.enqueue(project_id, file_path, sanitize_no_email(file.filename), {
             "analysisMode": analysis_mode,
             "llmProvider": llm_provider,
             "llmApiKey": llm_api_key,

@@ -91,14 +91,26 @@ removeFileBtn.addEventListener('click', () => {
   dragArea.classList.remove('hidden');
 });
 
+function sanitizeNoEmail(name) {
+  if (!name) return "";
+  const emailRegex = /[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+/g;
+  let sanitized = name.replace(emailRegex, 'Projet');
+  sanitized = sanitized.replace(/\S+@\S+/g, 'Projet');
+  sanitized = sanitized.replace(/^[\s-_.,()]+|[\s-_.,()]+$/g, '');
+  if (sanitized.trim().toLowerCase() === 'projet' || sanitized.trim() === '') {
+    return 'Projet Anonyme';
+  }
+  return sanitized;
+}
+
 function updateFileDisplay(file) {
-  fileNameSpan.textContent = file.name;
+  fileNameSpan.textContent = sanitizeNoEmail(file.name);
   dragArea.classList.add('hidden');
   fileInfo.classList.remove('hidden');
   
   // Suggest a project name if empty
   if (!projectNameInput.value) {
-    projectNameInput.value = file.name.replace('.zip', '').replace(/[-_]/g, ' ');
+    projectNameInput.value = sanitizeNoEmail(file.name.replace('.zip', '').replace(/[-_]/g, ' '));
   }
 }
 

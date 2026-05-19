@@ -140,46 +140,6 @@
             <p>Le moteur inspecte le code source pour corréler les patterns techniques aux critères RGESN.</p>
           </div>
         </div>
-
-        <!-- LLM Diagnostic Card -->
-        <div id="llmDiagnosticCard" class="card full-width hidden" style="margin-bottom: 30px; border-color: rgba(139, 92, 246, 0.25); background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(0, 0, 0, 0) 100%);">
-          <div class="card-header" style="border-bottom: 1px solid rgba(139, 92, 246, 0.15);">
-            <h2 style="color: #c084fc;"><i data-lucide="activity" style="width:16px; height:16px; vertical-align:middle; margin-right:6px;"></i> Diagnostic d'Analyse IA</h2>
-            <span class="badge" id="llmDiagStatusBadge">Succès</span>
-          </div>
-          <div class="card-body" style="padding: 20px;">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 16px;">
-              <div>
-                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Fournisseur d'IA</p>
-                <p id="llmDiagProvider" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
-              </div>
-              <div>
-                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Modèle Interrogé</p>
-                <p id="llmDiagModel" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
-              </div>
-              <div>
-                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Temps de réponse</p>
-                <p id="llmDiagTime" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
-              </div>
-            </div>
-            
-            <!-- Connection Failed Error Message -->
-            <div id="llmDiagErrorContainer" class="hidden" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--border-radius-sm); padding: 12px 16px; margin-bottom: 16px;">
-              <p style="font-size: 12px; font-weight: 700; color: #fca5a5; display: flex; align-items: center; gap: 6px;"><i data-lucide="alert-circle" style="width: 14px; height: 14px;"></i> Connexion impossible ou inférence échouée :</p>
-              <code id="llmDiagErrorMsg" style="display: block; font-family: monospace; font-size: 11px; color: #fecaca; margin-top: 6px; white-space: pre-wrap; word-break: break-all;">-</code>
-              <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">Le moteur a automatiquement basculé en mode <strong>Repli Classique (Regex)</strong> pour vous délivrer un audit complet.</p>
-            </div>
-
-            <!-- Toggle raw response -->
-            <div id="llmDiagOutputContainer">
-              <button type="button" class="btn btn-secondary btn-sm" id="toggleLlmRawBtn" style="border-color: rgba(139, 92, 246, 0.3); color: #c084fc; background: rgba(139, 92, 246, 0.05); font-weight: 700;">
-                <i data-lucide="chevron-right" class="btn-icon"></i> Voir la réponse brute de l'IA (JSON)
-              </button>
-              <pre id="llmDiagRawPre" class="hidden" style="margin-top: 14px; padding: 14px; background: rgba(0, 0, 0, 0.5); border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-family: monospace; font-size: 11px; color: #a78bfa; overflow-x: auto; max-height: 250px; white-space: pre-wrap;"></pre>
-            </div>
-          </div>
-        </div>
-
         <!-- Dashboard Content Grid -->
         <div id="projectDashboardContent" class="dashboard-grid">
           
@@ -279,6 +239,45 @@
             </div>
           </div>
 
+        </div>
+
+        <!-- LLM Diagnostic Card -->
+        <div id="llmDiagnosticCard" class="card full-width hidden" style="margin-top: 30px; border-color: rgba(139, 92, 246, 0.25); background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(0, 0, 0, 0) 100%);">
+          <div class="card-header" style="border-bottom: 1px solid rgba(139, 92, 246, 0.15);">
+            <h2 style="color: #c084fc;"><i data-lucide="activity" style="width:16px; height:16px; vertical-align:middle; margin-right:6px;"></i> Diagnostic d'Analyse IA</h2>
+            <span class="badge" id="llmDiagStatusBadge">Succès</span>
+          </div>
+          <div class="card-body" style="padding: 20px;">
+            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 16px;">
+              <div>
+                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Fournisseur d'IA</p>
+                <p id="llmDiagProvider" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
+              </div>
+              <div>
+                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Modèle Interrogé</p>
+                <p id="llmDiagModel" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
+              </div>
+              <div>
+                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Temps de réponse</p>
+                <p id="llmDiagTime" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
+              </div>
+            </div>
+            
+            <!-- Connection Failed Error Message -->
+            <div id="llmDiagErrorContainer" class="hidden" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--border-radius-sm); padding: 12px 16px; margin-bottom: 16px;">
+              <p style="font-size: 12px; font-weight: 700; color: #fca5a5; display: flex; align-items: center; gap: 6px;"><i data-lucide="alert-circle" style="width: 14px; height: 14px;"></i> Connexion impossible ou inférence échouée :</p>
+              <code id="llmDiagErrorMsg" style="display: block; font-family: monospace; font-size: 11px; color: #fecaca; margin-top: 6px; white-space: pre-wrap; word-break: break-all;">-</code>
+              <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">Le moteur a automatiquement basculé en mode <strong>Repli Classique (Regex)</strong> pour vous délivrer un audit complet.</p>
+            </div>
+
+            <!-- Toggle raw response -->
+            <div id="llmDiagOutputContainer">
+              <button type="button" class="btn btn-secondary btn-sm" id="toggleLlmRawBtn" style="border-color: rgba(139, 92, 246, 0.3); color: #c084fc; background: rgba(139, 92, 246, 0.05); font-weight: 700;">
+                <i data-lucide="chevron-right" class="btn-icon"></i> Voir la réponse brute de l'IA (JSON)
+              </button>
+              <pre id="llmDiagRawPre" class="hidden" style="margin-top: 14px; padding: 14px; background: rgba(0, 0, 0, 0.5); border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-family: monospace; font-size: 11px; color: #a78bfa; overflow-x: auto; max-height: 250px; white-space: pre-wrap;"></pre>
+            </div>
+          </div>
         </div>
       </div>
 
