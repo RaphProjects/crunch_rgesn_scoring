@@ -21,6 +21,10 @@
           <i data-lucide="leaf" class="logo-icon"></i>
           <span>EcoAudit <small>RGESN</small></span>
         </div>
+        <a class="official-rgesn-link" href="https://ecoresponsable.numerique.gouv.fr/publications/referentiel-general-ecoconception/" target="_blank" rel="noopener noreferrer">
+          <i data-lucide="external-link"></i>
+          Référentiel officiel
+        </a>
       </div>
       
       <!-- Upload Section -->
@@ -51,12 +55,12 @@
 
           <!-- URL Input Container -->
           <div class="form-group" style="margin-bottom: 14px;">
-            <label for="projectUrl">URL du Site Web (Optionnel)</label>
+            <label for="projectUrl">URL(s) du Site Web (Optionnel)</label>
             <div class="url-input-wrapper" style="position: relative; display: flex; align-items: center; margin-top: 4px;">
-              <i data-lucide="globe" style="position: absolute; left: 12px; width: 16px; height: 16px; color: rgba(255, 255, 255, 0.4);"></i>
-              <input type="url" id="projectUrl" placeholder="https://exemple.com" style="width: 100%; padding: 10px 12px 10px 36px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #fff; font-size: 13px;">
+              <i data-lucide="globe" style="position: absolute; left: 12px; top: 11px; width: 16px; height: 16px; color: rgba(255, 255, 255, 0.4);"></i>
+              <textarea id="projectUrl" rows="3" placeholder="https://exemple.com&#10;https://exemple.com/page-reference" style="width: 100%; padding: 10px 12px 10px 36px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #fff; font-size: 13px; resize: vertical; line-height: 1.4;"></textarea>
             </div>
-            <p class="form-help" style="font-size: 11px; color: rgba(255, 255, 255, 0.5); margin-top: 6px; line-height: 1.4;">Le site sera téléchargé et analysé conjointement avec le code source.</p>
+            <p class="form-help" style="font-size: 11px; color: rgba(255, 255, 255, 0.5); margin-top: 6px; line-height: 1.4;">Une URL par ligne. Chaque page de reference sera telechargee et enrichie avec jusqu'a 4 liens internes.</p>
           </div>
 
           <!-- Selection mode d'analyse -->
@@ -149,11 +153,14 @@
             <h1 id="currentProjectName">Nom du Projet</h1>
             <p class="project-meta">
               <span id="projectDate"><i data-lucide="calendar"></i> 19 Mai 2026</span>
-              <span id="projectFiles"><i data-lucide="file-code"></i> 142 fichiers</span>
+              <button type="button" id="projectFiles" class="project-files-link"><i data-lucide="file-code"></i> 142 fichiers</button>
               <span id="projectMode" class="hidden"><i data-lucide="cpu"></i> Analyse IA</span>
             </p>
           </div>
           <div class="project-actions">
+            <button class="btn btn-secondary btn-sm hidden" id="openManualAssistantBtn">
+              <i data-lucide="messages-square" class="btn-icon"></i> Assistant formulaire
+            </button>
             <button class="btn btn-secondary btn-sm hidden" id="openReportChatBtn">
               <i data-lucide="message-circle" class="btn-icon"></i> Chat rapport
             </button>
@@ -418,12 +425,48 @@
         Posez une question sur les scores, les critères non validés, les justifications ou le plan d'action.
       </div>
     </div>
+    <div class="report-chat-settings">
+      <label for="reportChatProvider">Fournisseur</label>
+      <select id="reportChatProvider">
+        <option value="local">Local (Ollama compatible)</option>
+        <option value="openai">OpenAI (ChatGPT)</option>
+        <option value="mistral">Mistral AI</option>
+        <option value="anthropic">Anthropic (Claude)</option>
+      </select>
+      <label for="reportChatApiKey">Cl&eacute; API</label>
+      <input type="password" id="reportChatApiKey" placeholder="Requise pour OpenAI, Mistral ou Anthropic">
+      <label for="reportChatModel">Mod&egrave;le du chat rapport</label>
+      <input type="text" id="reportChatModel" placeholder="qwen3:0.6b, gpt-4o-mini...">
+    </div>
     <form id="reportChatForm" class="report-chat-form">
       <textarea id="reportChatInput" rows="2" placeholder="Ex: Quels critères corriger en priorité ?"></textarea>
       <button type="submit" class="btn btn-primary btn-sm">
         <i data-lucide="send" class="btn-icon"></i> Envoyer
       </button>
     </form>
+  </aside>
+
+  <aside id="filesPanel" class="files-panel hidden">
+    <div class="files-panel-header">
+      <div>
+        <span class="badge">Inventaire</span>
+        <h2>Fichiers de l'analyse</h2>
+        <p id="filesPanelSummary">Aucun détail disponible.</p>
+      </div>
+      <button type="button" class="icon-btn" id="closeFilesPanelBtn" title="Fermer">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <div class="files-panel-body">
+      <section>
+        <h3>Fichiers analysés</h3>
+        <div id="analyzedFilesList" class="files-list"></div>
+      </section>
+      <section>
+        <h3>Fichiers ignorés</h3>
+        <div id="ignoredFilesList" class="files-list"></div>
+      </section>
+    </div>
   </aside>
 
   <!-- JavaScript logic -->

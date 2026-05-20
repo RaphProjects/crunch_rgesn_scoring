@@ -28,9 +28,10 @@ const clearAllCriteriaBtn = document.getElementById('clearAllCriteriaBtn');
 
 // Auto-fill project name as user types a URL
 projectUrlInput.addEventListener('input', () => {
-  if (projectUrlInput.value) {
+  const firstUrl = parseUrlList(projectUrlInput.value)[0] || '';
+  if (firstUrl) {
     try {
-      let urlStr = projectUrlInput.value;
+      let urlStr = firstUrl;
       if (!urlStr.startsWith('http://') && !urlStr.startsWith('https://')) {
         urlStr = 'https://' + urlStr;
       }
@@ -47,6 +48,13 @@ projectUrlInput.addEventListener('input', () => {
     }
   }
 });
+
+function parseUrlList(rawValue) {
+  return (rawValue || '')
+    .split(/[\n,;]+/)
+    .map(value => value.trim())
+    .filter(Boolean);
+}
 
 // LLM Settings DOM Elements
 const modeRegexBtn = document.getElementById('modeRegexBtn');
@@ -69,6 +77,7 @@ const projectDate = document.getElementById('projectDate');
 const projectFiles = document.getElementById('projectFiles');
 const deleteProjectBtn = document.getElementById('deleteProjectBtn');
 const downloadPdfBtn = document.getElementById('downloadPdfBtn');
+const openManualAssistantBtn = document.getElementById('openManualAssistantBtn');
 const openReportChatBtn = document.getElementById('openReportChatBtn');
 const reportChatTab = document.getElementById('reportChatTab');
 const reportChatPanel = document.getElementById('reportChatPanel');
@@ -77,6 +86,14 @@ const reportChatMessages = document.getElementById('reportChatMessages');
 const reportChatForm = document.getElementById('reportChatForm');
 const reportChatInput = document.getElementById('reportChatInput');
 const reportChatPrivacy = document.getElementById('reportChatPrivacy');
+const reportChatProvider = document.getElementById('reportChatProvider');
+const reportChatApiKey = document.getElementById('reportChatApiKey');
+const reportChatModel = document.getElementById('reportChatModel');
+const filesPanel = document.getElementById('filesPanel');
+const closeFilesPanelBtn = document.getElementById('closeFilesPanelBtn');
+const filesPanelSummary = document.getElementById('filesPanelSummary');
+const analyzedFilesList = document.getElementById('analyzedFilesList');
+const ignoredFilesList = document.getElementById('ignoredFilesList');
 
 const projectErrorAlert = document.getElementById('projectErrorAlert');
 const projectErrorMsg = document.getElementById('projectErrorMsg');
@@ -320,9 +337,10 @@ uploadForm.addEventListener('submit', async (e) => {
   formData.append('name', projectNameInput.value);
 
   const hasFile = fileInput.files.length > 0;
-  const urlValue = projectUrlInput.value.trim();
+  const urlValues = parseUrlList(projectUrlInput.value);
+  const urlValue = urlValues.join('\n');
 
-  if (!hasFile && !urlValue) {
+  if (!hasFile && urlValues.length === 0) {
     alert("Veuillez sélectionner un fichier ZIP et/ou saisir une URL de site web.");
     return;
   }
@@ -330,7 +348,7 @@ uploadForm.addEventListener('submit', async (e) => {
   if (hasFile) {
     formData.append('file', fileInput.files[0]);
   }
-  if (urlValue) {
+  if (urlValues.length > 0) {
     formData.append('url', urlValue);
   }
 
@@ -460,6 +478,9 @@ async function selectProject(projectId) {
   currentProjectId = projectId;
   currentProjectSummary = null;
   currentProjectSummaryId = null;
+  if (reportChatPanel) delete reportChatPanel.dataset.initialized;
+  if (reportChatModel) reportChatModel.value = '';
+  if (reportChatApiKey) reportChatApiKey.value = '';
   
   // Highlight active sidebar item
   const items = document.querySelectorAll('.project-item');
@@ -497,6 +518,7 @@ async function loadProjectDetails() {
     currentProjectName.textContent = currentProject.name;
     projectDate.innerHTML = `<i data-lucide="calendar"></i> ${new Date(currentProject.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`;
     projectFiles.innerHTML = `<i data-lucide="file-code"></i> ${currentProject.totalFiles} fichiers`;
+    projectFiles.disabled = false;
     
     // Display Analysis Mode Badge
     if (currentProject.analysisMode === 'llm') {
@@ -519,10 +541,12 @@ async function loadProjectDetails() {
       projectProcessingAlert.classList.remove('hidden');
       projectDashboardContent.classList.add('hidden');
       if (manualChatbotView) manualChatbotView.classList.add('hidden');
+      if (openManualAssistantBtn) openManualAssistantBtn.classList.add('hidden');
       if (downloadPdfBtn) downloadPdfBtn.classList.add('hidden');
       if (openReportChatBtn) openReportChatBtn.classList.add('hidden');
       if (reportChatTab) reportChatTab.classList.add('hidden');
       closeReportChat();
+      closeFilesPanel();
       const diagCard = document.getElementById('llmDiagnosticCard');
       if (diagCard) diagCard.classList.add('hidden');
       
@@ -538,10 +562,12 @@ async function loadProjectDetails() {
       projectProcessingAlert.classList.add('hidden');
       projectDashboardContent.classList.add('hidden');
       if (manualChatbotView) manualChatbotView.classList.add('hidden');
+      if (openManualAssistantBtn) openManualAssistantBtn.classList.add('hidden');
       if (downloadPdfBtn) downloadPdfBtn.classList.add('hidden');
       if (openReportChatBtn) openReportChatBtn.classList.add('hidden');
       if (reportChatTab) reportChatTab.classList.add('hidden');
       closeReportChat();
+      closeFilesPanel();
       const diagCard = document.getElementById('llmDiagnosticCard');
       if (diagCard) diagCard.classList.add('hidden');
       
@@ -559,6 +585,9 @@ async function loadProjectDetails() {
       if (downloadPdfBtn) downloadPdfBtn.classList.remove('hidden');
       if (openReportChatBtn) openReportChatBtn.classList.remove('hidden');
       if (reportChatTab) reportChatTab.classList.remove('hidden');
+      if (openManualAssistantBtn) {
+        openManualAssistantBtn.classList.toggle('hidden', getManualCriteria().length === 0);
+      }
 
       // LLM Diagnostics Rendering
       const diagCard = document.getElementById('llmDiagnosticCard');
@@ -612,9 +641,23 @@ async function loadProjectDetails() {
         }
       }
       
-      // Render dashboard contents
-      renderDashboard();
       const shouldUseChatbot = shouldOpenManualAssistant();
+      const manualCriteriaCount = getManualCriteria().length;
+      console.debug('[ManualAssistant]', {
+        projectId: currentProject.id,
+        analysisMode: currentProject.analysisMode,
+        manualResolutionMode: currentProject.manualResolutionMode,
+        manualCriteriaCount,
+        shouldUseChatbot,
+        llmDiagnosticVisible: Boolean(currentProject.llmDiagnostic)
+      });
+
+      try {
+        renderDashboard();
+      } catch (renderError) {
+        console.error('[ManualAssistant] Dashboard rendering failed before view switch:', renderError);
+      }
+
       if (shouldUseChatbot) {
         showManualChatbot();
       } else {
@@ -656,11 +699,17 @@ function shouldOpenManualAssistant() {
 function showProjectDashboard() {
   projectDashboardContent.classList.remove('hidden');
   if (manualChatbotView) manualChatbotView.classList.add('hidden');
+  const diagCard = document.getElementById('llmDiagnosticCard');
+  if (diagCard && currentProject && currentProject.llmDiagnostic) {
+    diagCard.classList.remove('hidden');
+  }
 }
 
 function showManualChatbot() {
   if (!manualChatbotView) return;
   projectDashboardContent.classList.add('hidden');
+  const diagCard = document.getElementById('llmDiagnosticCard');
+  if (diagCard) diagCard.classList.add('hidden');
   manualChatbotView.classList.remove('hidden');
   renderManualChatbot();
   manualChatbotView.scrollIntoView({ behavior: 'smooth', block: 'start' });
@@ -737,9 +786,16 @@ async function answerManualChatbot(code, newStatus) {
       projects[projIdx].globalScore = currentProject.globalScore;
       projects[projIdx].categoryScores = currentProject.categoryScores;
     }
+    if (openManualAssistantBtn) {
+      openManualAssistantBtn.classList.toggle('hidden', getManualCriteria().length === 0);
+    }
 
     renderProjectsList();
-    renderDashboard();
+    try {
+      renderDashboard();
+    } catch (renderError) {
+      console.error('[ManualAssistant] Dashboard rendering failed after manual answer:', renderError);
+    }
     renderManualChatbot();
   } catch (err) {
     alert(err.message);
@@ -1056,9 +1112,16 @@ async function updateManualStatus(code, newStatus, event) {
       projects[projIdx].globalScore = currentProject.globalScore;
       projects[projIdx].categoryScores = currentProject.categoryScores;
     }
+    if (openManualAssistantBtn) {
+      openManualAssistantBtn.classList.toggle('hidden', getManualCriteria().length === 0);
+    }
     
     renderProjectsList();
-    renderDashboard();
+    try {
+      renderDashboard();
+    } catch (renderError) {
+      console.error('[ManualAssistant] Dashboard rendering failed after manual status update:', renderError);
+    }
     
     // Re-expand the active one
     const row = document.getElementById(`crit-row-${code}`);
@@ -1073,6 +1136,12 @@ async function updateManualStatus(code, newStatus, event) {
 if (manualChatbotExitBtn) {
   manualChatbotExitBtn.addEventListener('click', () => {
     showProjectDashboard();
+  });
+}
+
+if (openManualAssistantBtn) {
+  openManualAssistantBtn.addEventListener('click', () => {
+    showManualChatbot();
   });
 }
 
@@ -1100,20 +1169,45 @@ deleteProjectBtn.addEventListener('click', async () => {
 });
 
 function getProjectChatProvider() {
-  return (currentProject && currentProject.llmProvider) || llmProvider.value || 'local';
+  return (reportChatProvider && reportChatProvider.value) || (currentProject && currentProject.llmProvider) || llmProvider.value || 'local';
+}
+
+function getDefaultChatModel(provider) {
+  const savedReportModel = localStorage.getItem('ecoaudit_report_chat_model_' + provider);
+  if (savedReportModel) return savedReportModel;
+  if (currentProject && currentProject.llmModel && provider === currentProject.llmProvider) return currentProject.llmModel;
+  if (provider === 'local') return localStorage.getItem('ecoaudit_model_local') || 'qwen3:0.6b';
+  if (provider === 'openai') return localStorage.getItem('ecoaudit_model_openai') || 'gpt-4o-mini';
+  if (provider === 'mistral') return localStorage.getItem('ecoaudit_model_mistral') || 'mistral-tiny';
+  if (provider === 'anthropic') return localStorage.getItem('ecoaudit_model_anthropic') || 'claude-3-5-haiku';
+  return llmModel.value || '';
 }
 
 function getProjectChatModel(provider) {
-  return (currentProject && currentProject.llmModel) || localStorage.getItem('ecoaudit_model_' + provider) || llmModel.value || '';
+  return (reportChatModel && reportChatModel.value.trim()) || getDefaultChatModel(provider);
 }
 
 function getProjectChatApiKey(provider) {
   if (provider === 'local') return '';
-  return localStorage.getItem('ecoaudit_apikey_' + provider) || llmApiKey.value || '';
+  return (reportChatApiKey && reportChatApiKey.value.trim()) || localStorage.getItem('ecoaudit_apikey_' + provider) || llmApiKey.value || '';
 }
 
 function openReportChat() {
   if (!reportChatPanel) return;
+  const projectProvider = (currentProject && currentProject.llmProvider) || llmProvider.value || 'local';
+  if (reportChatProvider && !reportChatPanel.dataset.initialized) {
+    reportChatProvider.value = projectProvider;
+  }
+  if (reportChatModel && !reportChatModel.value.trim()) {
+    reportChatModel.value = getDefaultChatModel(getProjectChatProvider());
+  }
+  if (reportChatApiKey) {
+    const provider = getProjectChatProvider();
+    reportChatApiKey.closest('.report-chat-settings')?.classList.toggle('uses-local-provider', provider === 'local');
+    if (provider !== 'local' && !reportChatApiKey.value.trim()) {
+      reportChatApiKey.value = localStorage.getItem('ecoaudit_apikey_' + provider) || '';
+    }
+  }
   const provider = getProjectChatProvider();
   if (reportChatPrivacy) {
     reportChatPrivacy.textContent = provider === 'local'
@@ -1121,12 +1215,55 @@ function openReportChat() {
       : "Fournisseur externe : le contexte et vos questions sont anonymisés côté serveur avant l'appel LLM.";
   }
   reportChatPanel.classList.remove('hidden');
+  reportChatPanel.dataset.initialized = 'true';
   if (reportChatInput) reportChatInput.focus();
   lucide.createIcons();
 }
 
 function closeReportChat() {
   if (reportChatPanel) reportChatPanel.classList.add('hidden');
+}
+
+function closeFilesPanel() {
+  if (filesPanel) filesPanel.classList.add('hidden');
+}
+
+function renderFileRows(files, emptyText, showReason = false) {
+  if (!files || files.length === 0) {
+    return `<div class="files-empty">${escapeHTML(emptyText)}</div>`;
+  }
+  return files.map(file => {
+    const path = typeof file === 'string' ? file : file.path;
+    const meta = showReason ? (file.reason || 'Ignoré par l’analyseur.') : (file.type || 'texte');
+    return `
+      <div class="file-row">
+        <span class="file-path">${escapeHTML(path)}</span>
+        <span class="file-reason">${escapeHTML(meta)}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+function openFilesPanel() {
+  if (!filesPanel || !currentProject) return;
+  const inventory = currentProject.fileInventory || {};
+  const analyzed = inventory.analyzed || [];
+  const ignored = inventory.ignored || [];
+  if (filesPanelSummary) {
+    if (currentProject.fileInventory) {
+      filesPanelSummary.textContent = `${analyzed.length} fichier(s) analysé(s), ${ignored.length} fichier(s) ignoré(s).`;
+    } else {
+      filesPanelSummary.textContent = "Le détail des fichiers n'a pas été enregistré pour cette ancienne analyse. Relancez l'analyse pour obtenir l'inventaire complet.";
+    }
+  }
+  if (analyzedFilesList) {
+    analyzedFilesList.innerHTML = renderFileRows(analyzed, "Aucun fichier analysé enregistré.");
+  }
+  if (ignoredFilesList) {
+    ignoredFilesList.innerHTML = renderFileRows(ignored, "Aucun fichier ignoré enregistré.", true);
+  }
+  filesPanel.classList.remove('hidden');
+  lucide.createIcons();
 }
 
 function appendReportChatMessage(role, text) {
@@ -1149,6 +1286,48 @@ if (reportChatTab) {
 
 if (closeReportChatBtn) {
   closeReportChatBtn.addEventListener('click', closeReportChat);
+}
+
+if (projectFiles) {
+  projectFiles.addEventListener('click', openFilesPanel);
+}
+
+if (closeFilesPanelBtn) {
+  closeFilesPanelBtn.addEventListener('click', closeFilesPanel);
+}
+
+if (reportChatProvider) {
+  reportChatProvider.addEventListener('change', () => {
+    const provider = reportChatProvider.value;
+    if (reportChatModel) {
+      reportChatModel.value = getDefaultChatModel(provider);
+    }
+    if (reportChatPrivacy) {
+      reportChatPrivacy.textContent = provider === 'local'
+        ? "Utilise le LLM local configurÃ©. Les donnÃ©es restent envoyÃ©es au service local."
+        : "Fournisseur externe : contexte et question anonymisÃ©s avant envoi.";
+    }
+    if (reportChatApiKey) {
+      reportChatApiKey.closest('.report-chat-settings')?.classList.toggle('uses-local-provider', provider === 'local');
+      reportChatApiKey.value = provider === 'local' ? '' : (localStorage.getItem('ecoaudit_apikey_' + provider) || '');
+    }
+  });
+}
+
+if (reportChatApiKey) {
+  reportChatApiKey.addEventListener('input', () => {
+    const provider = getProjectChatProvider();
+    if (provider !== 'local') {
+      localStorage.setItem('ecoaudit_apikey_' + provider, reportChatApiKey.value);
+    }
+  });
+}
+
+if (reportChatModel) {
+  reportChatModel.addEventListener('input', () => {
+    const provider = getProjectChatProvider();
+    localStorage.setItem('ecoaudit_report_chat_model_' + provider, reportChatModel.value);
+  });
 }
 
 if (reportChatForm) {
@@ -1242,6 +1421,7 @@ function showWelcomeView() {
   projectView.classList.add('hidden');
   if (reportChatTab) reportChatTab.classList.add('hidden');
   closeReportChat();
+  closeFilesPanel();
   
   if (pollingInterval) {
     clearInterval(pollingInterval);
@@ -1268,7 +1448,14 @@ filterTabs.forEach(tab => {
 
 // HTML escaping helper
 function escapeHTML(str) {
-  if (!str) return '';
+  if (str === null || str === undefined) return '';
+  if (typeof str !== 'string') {
+    try {
+      str = typeof str === 'object' ? JSON.stringify(str) : String(str);
+    } catch (err) {
+      str = String(str);
+    }
+  }
   return str
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')

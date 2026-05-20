@@ -307,12 +307,14 @@ def build_document_evidence(criteria_repo, file_contents):
                     break
     return evidence
 
-def select_llm_target_codes(results, criteria_repo, document_evidence, target_count=35):
+def select_llm_target_codes(results, criteria_repo, document_evidence, target_count=35, preserve_manual=False):
     ordered_codes = [crit.get('code') for crit in criteria_repo if crit.get('code') in results]
     selected = []
 
     def add(code):
         if code in results and code not in selected:
+            if preserve_manual and results[code].get('status') == 'Manuel':
+                return
             selected.append(code)
 
     for code in ordered_codes:
@@ -401,7 +403,7 @@ def get_all_files(dir_path, array_of_files=None):
             
     return array_of_files
 
-def is_uninteresting_file_name(path):
+def get_file_ignore_reason(path):
     name = os.path.basename(path).lower()
     rel = path.replace('\\', '/').lower()
     ext = os.path.splitext(name)[1].lower()
@@ -412,7 +414,7 @@ def is_uninteresting_file_name(path):
         'readme.md', 'readme.txt'
     }
     if name in always_keep or ext in ['.md', '.pdf']:
-        return False
+        return None
 
     generated_markers = [
         '.min.', '.bundle.', '.chunk.', '.map', 'source-map', 'sourcemap',
@@ -423,7 +425,7 @@ def is_uninteresting_file_name(path):
         'swagger.json', 'openapi.json'
     ]
     if any(marker in name for marker in generated_markers):
-        return True
+        return "Fichier généré, dépendance, lockfile ou source map ignoré."
 
     ignored_exts = {
         '.map', '.lock', '.log', '.png', '.jpg', '.jpeg', '.gif', '.webp',
@@ -431,14 +433,21 @@ def is_uninteresting_file_name(path):
         '.webm', '.mp3', '.wav'
     }
     if ext in ignored_exts:
-        return True
+        return "Extension binaire, média, police ou fichier technique non analysée."
 
-    return any(part in rel for part in ['/coverage/', '/snapshots/', '/fixtures/', '/mocks/'])
+    if any(part in rel for part in ['/coverage/', '/snapshots/', '/fixtures/', '/mocks/']):
+        return "Dossier de tests, fixtures, snapshots ou couverture ignoré."
+
+    return None
+
+def is_uninteresting_file_name(path):
+    return get_file_ignore_reason(path) is not None
 
 def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
     log_event("ANALYZER", "START", f"Starting static analysis for directory: {dir_path}")
     llm_diagnostic = None
-    all_files = get_all_files(dir_path)
+    discovered_files = get_all_files(dir_path)
+    all_files = discovered_files[:]
     def file_read_priority(path):
         name = os.path.basename(path).lower()
         ext = os.path.splitext(path)[1].lower()
@@ -458,6 +467,7 @@ def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
     read_limit = 320
     files_read = 0
 
+    read_failures = {}
     for file in all_files:
         if files_read >= read_limit:
             break
@@ -478,7 +488,7 @@ def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
                 })
                 files_read += 1
             except Exception:
-                pass
+                read_failures[file] = "Lecture impossible ou encodage non exploitable."
         elif ext == '.pdf':
             content = extract_pdf_text(file)
             if content:
@@ -1061,6 +1071,7 @@ def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
         start_time_ms = int(time.time() * 1000)
         provider = llm_config.get('llmProvider')
         model = llm_config.get('llmModel')
+        preserve_manual_for_guided_flow = llm_config.get('manualResolutionMode') == 'chatbot'
         if not model:
             if provider == 'local': model = 'qwen3:0.6b'
             elif provider == 'openai': model = 'gpt-4o-mini'
@@ -1071,7 +1082,18 @@ def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
             log_event("ANALYZER", "LLM_START", f"Running LLM-assisted analysis using provider: {provider}, model: {model}")
             project_context = collect_project_context(dir_path, file_contents)
 
-            llm_target_codes = select_llm_target_codes(results, criteria_repo, document_evidence)
+            llm_target_codes = select_llm_target_codes(
+                results,
+                criteria_repo,
+                document_evidence,
+                preserve_manual=preserve_manual_for_guided_flow
+            )
+            manual_preserved_count = len([crit for crit in results.values() if crit.get('status') == 'Manuel'])
+            log_event(
+                "ANALYZER",
+                "LLM_TARGETS",
+                f"Selected {len(llm_target_codes)} LLM criteria. guided_chatbot={preserve_manual_for_guided_flow}, manual_preserved_before_llm={manual_preserved_count}, targets={','.join(llm_target_codes)}"
+            )
             full_raw_output = ""
 
             for code in llm_target_codes:
@@ -1159,4 +1181,38 @@ Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'obj
                 "rawOutput": full_raw_output.strip() if 'full_raw_output' in locals() else "Aucune réponse reçue du modèle."
             }
 
-    return results, llm_diagnostic
+    analyzed_paths = {f['path'] for f in file_contents}
+    supported_text_exts = ['.html', '.htm', '.css', '.js', '.jsx', '.ts', '.tsx', '.json', '.yaml', '.yml', '.py', '.txt', '.md']
+    ignored_files = []
+    for file in discovered_files:
+        if file in analyzed_paths:
+            continue
+        reason = get_file_ignore_reason(file)
+        _, ext = os.path.splitext(file)
+        base = os.path.basename(file).lower()
+        if not reason and file in read_failures:
+            reason = read_failures[file]
+        if not reason and files_read >= read_limit and file in all_files:
+            reason = f"Limite de lecture atteinte ({read_limit} fichiers)."
+        if not reason and not (ext.lower() in supported_text_exts or ext.lower() == '.pdf' or base == 'dockerfile'):
+            reason = "Type de fichier non pris en charge par l'analyse textuelle."
+        if not reason:
+            reason = "Non retenu par l'analyseur."
+        ignored_files.append({
+            "path": os.path.relpath(file, dir_path).replace('\\', '/'),
+            "reason": reason
+        })
+
+    file_inventory = {
+        "analyzed": [
+            {
+                "path": f["relPath"],
+                "type": f["ext"] or os.path.basename(f["relPath"]).lower()
+            }
+            for f in file_contents
+        ],
+        "ignored": ignored_files,
+        "readLimit": read_limit
+    }
+
+    return results, llm_diagnostic, file_inventory

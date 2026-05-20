@@ -9,6 +9,12 @@ import db
 from analysis_queue import analysis_queue
 from logger import log_event
 
+def truncate_for_log(value, max_chars=60000):
+    text = "" if value is None else str(value)
+    if len(text) <= max_chars:
+        return text
+    return text[:max_chars] + f"\n... [tronqué: {len(text) - max_chars} caractères restants]"
+
 def sanitize_no_email(name):
     if not name:
         return ""
@@ -19,6 +25,23 @@ def sanitize_no_email(name):
     if sanitized.strip().lower() in ['projet', '']:
         return "Projet Anonyme"
     return sanitized
+
+def parse_url_list(raw_url):
+    if not raw_url:
+        return []
+    urls = []
+    for part in re.split(r'[\n,;]+', raw_url):
+        url = part.strip()
+        if url:
+            urls.append(url)
+    deduped = []
+    seen = set()
+    for url in urls:
+        key = url.lower().rstrip('/')
+        if key not in seen:
+            seen.add(key)
+            deduped.append(url)
+    return deduped[:10]
 
 app = Flask(__name__, static_folder='public', static_url_path='')
 log_event("SERVER", "STARTUP", "Flask application initialized")
@@ -67,10 +90,11 @@ def upload_project():
         log_event("SERVER", "API", "POST /api/upload - New project upload initiated")
         
         url = request.form.get('url', '').strip()
+        urls = parse_url_list(url)
         file = request.files.get('file') if 'file' in request.files else None
         
         has_file = file and file.filename != ''
-        has_url = bool(url)
+        has_url = len(urls) > 0
         
         if not has_file and not has_url:
             return jsonify({"error": "Veuillez fournir un fichier ZIP et/ou une URL de site web à analyser."}), 400
@@ -106,18 +130,18 @@ def upload_project():
             file.save(file_path)
             
             if has_url:
-                original_name = f"{sanitize_no_email(file.filename)} + {url}"
+                original_name = f"{sanitize_no_email(file.filename)} + {len(urls)} URL(s)"
                 project_name = sanitize_no_email(requested_name or file.filename.replace('.zip', ''))
             else:
                 original_name = sanitize_no_email(file.filename)
                 project_name = sanitize_no_email(requested_name or file.filename.replace('.zip', ''))
         else:
-            domain = url
+            domain = urls[0]
             if '://' in domain:
                 domain = domain.split('://')[1]
             domain = domain.split('/')[0]
-            original_name = url
-            project_name = sanitize_no_email(requested_name or f"Site {domain}")
+            original_name = " + ".join(urls)
+            project_name = sanitize_no_email(requested_name or (f"Site {domain}" if len(urls) == 1 else f"Site {domain} + {len(urls) - 1} page(s)"))
 
         new_project = {
             "id": project_id,
@@ -134,6 +158,7 @@ def upload_project():
             "analysisMode": analysis_mode,
             "manualResolutionMode": manual_resolution_mode,
             "excludedCriteria": excluded_criteria,
+            "urls": urls,
             "llmProvider": llm_provider,
             "llmModel": llm_model
         }
@@ -142,10 +167,11 @@ def upload_project():
         log_event("SERVER", "UPLOAD_SUCCESS", f"Enqueued project '{project_name}' (ID: {project_id}) for mode: {analysis_mode}, provider: {llm_provider}")
         analysis_queue.enqueue(project_id, file_path, original_name, {
             "analysisMode": analysis_mode,
+            "manualResolutionMode": manual_resolution_mode,
             "llmProvider": llm_provider,
             "llmApiKey": llm_api_key,
             "llmModel": llm_model
-        }, url=url if url else None, excluded_criteria=excluded_criteria)
+        }, url=urls, excluded_criteria=excluded_criteria)
 
         return jsonify({
             "success": True,
@@ -711,90 +737,136 @@ def build_project_report_context(project: dict) -> str:
     return "\n".join(lines)[:30000]
 
 
-def call_configured_llm(llm_config: dict, system_prompt: str, user_prompt: str) -> str:
+def call_configured_llm(llm_config: dict, system_prompt: str, user_prompt: str, trace_id=None) -> str:
+    started_at = time.time()
+    trace_prefix = f"trace={trace_id} " if trace_id else ""
     provider = llm_config.get('llmProvider', 'local')
     if should_anonymize_provider(provider):
         user_prompt = anonymize_for_external_llm(user_prompt)
 
     model = llm_config.get('llmModel', '')
     api_key = llm_config.get('llmApiKey', '')
+    effective_model = model or {
+        'local': 'qwen3:0.6b',
+        'openai': 'gpt-4o-mini',
+        'mistral': 'mistral-tiny',
+        'anthropic': 'claude-3-5-haiku'
+    }.get(provider, model)
 
-    if provider == 'local':
-        import ollama
-        response = ollama.chat(
-            model=model if model else 'qwen3:0.6b',
-            messages=[
-                {'role': 'system', 'content': system_prompt},
-                {'role': 'user', 'content': user_prompt}
-            ],
-            options={'temperature': 0.1}
-        )
-        return response['message']['content'].strip()
+    log_event(
+        "REPORT_CHAT_LLM",
+        "REQUEST",
+        f"{trace_prefix}provider={provider}, model={effective_model}, anonymized={should_anonymize_provider(provider)}",
+        truncate_for_log(f"System prompt:\n{system_prompt}\n\nUser prompt:\n{user_prompt}")
+    )
 
-    if provider == 'openai':
-        import requests
-        res = requests.post(
-            'https://api.openai.com/v1/chat/completions',
-            headers={
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {api_key}'
-            },
-            json={
-                'model': model if model else 'gpt-4o-mini',
-                'messages': [
+    try:
+        if provider == 'local':
+            import ollama
+            response = ollama.chat(
+                model=effective_model,
+                messages=[
                     {'role': 'system', 'content': system_prompt},
                     {'role': 'user', 'content': user_prompt}
                 ],
-                'temperature': 0.1
-            },
-            timeout=60
-        )
-        res.raise_for_status()
-        return res.json()['choices'][0]['message']['content'].strip()
+                options={'temperature': 0.1}
+            )
+            content = (response.get('message') or {}).get('content', '')
+            duration_ms = int((time.time() - started_at) * 1000)
+            log_event(
+                "REPORT_CHAT_LLM",
+                "RESPONSE",
+                f"{trace_prefix}provider={provider}, model={effective_model}, durationMs={duration_ms}, chars={len(content or '')}",
+                truncate_for_log(f"Raw response object:\n{json.dumps(response, ensure_ascii=False, default=str)}\n\nExtracted content:\n{content}")
+            )
+            return (content or '').strip()
 
-    if provider == 'mistral':
-        import requests
-        res = requests.post(
-            'https://api.mistral.ai/v1/chat/completions',
-            headers={
-                'Content-Type': 'application/json',
-                'Authorization': f'Bearer {api_key}'
-            },
-            json={
-                'model': model if model else 'mistral-tiny',
-                'messages': [
-                    {'role': 'system', 'content': system_prompt},
-                    {'role': 'user', 'content': user_prompt}
-                ],
-                'temperature': 0.1
-            },
-            timeout=60
-        )
-        res.raise_for_status()
-        return res.json()['choices'][0]['message']['content'].strip()
+        if provider == 'openai':
+            import requests
+            res = requests.post(
+                'https://api.openai.com/v1/chat/completions',
+                headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {api_key}'
+                },
+                json={
+                    'model': effective_model,
+                    'messages': [
+                        {'role': 'system', 'content': system_prompt},
+                        {'role': 'user', 'content': user_prompt}
+                    ],
+                    'temperature': 0.1
+                },
+                timeout=60
+            )
+            duration_ms = int((time.time() - started_at) * 1000)
+            log_event("REPORT_CHAT_LLM", "HTTP_RESPONSE", f"{trace_prefix}provider={provider}, status={res.status_code}, durationMs={duration_ms}", truncate_for_log(res.text))
+            res.raise_for_status()
+            content = res.json()['choices'][0]['message']['content']
+            log_event("REPORT_CHAT_LLM", "RESPONSE", f"{trace_prefix}provider={provider}, model={effective_model}, chars={len(content or '')}", truncate_for_log(content))
+            return (content or '').strip()
 
-    if provider == 'anthropic':
-        import requests
-        res = requests.post(
-            'https://api.anthropic.com/v1/messages',
-            headers={
-                'Content-Type': 'application/json',
-                'x-api-key': api_key,
-                'anthropic-version': '2023-06-01'
-            },
-            json={
-                'model': model if model else 'claude-3-5-haiku',
-                'max_tokens': 2000,
-                'system': system_prompt,
-                'messages': [{'role': 'user', 'content': user_prompt}],
-                'temperature': 0.1
-            },
-            timeout=60
-        )
-        res.raise_for_status()
-        return res.json()['content'][0]['text'].strip()
+        if provider == 'mistral':
+            import requests
+            res = requests.post(
+                'https://api.mistral.ai/v1/chat/completions',
+                headers={
+                    'Content-Type': 'application/json',
+                    'Authorization': f'Bearer {api_key}'
+                },
+                json={
+                    'model': effective_model,
+                    'messages': [
+                        {'role': 'system', 'content': system_prompt},
+                        {'role': 'user', 'content': user_prompt}
+                    ],
+                    'temperature': 0.1
+                },
+                timeout=60
+            )
+            duration_ms = int((time.time() - started_at) * 1000)
+            log_event("REPORT_CHAT_LLM", "HTTP_RESPONSE", f"{trace_prefix}provider={provider}, status={res.status_code}, durationMs={duration_ms}", truncate_for_log(res.text))
+            res.raise_for_status()
+            content = res.json()['choices'][0]['message']['content']
+            log_event("REPORT_CHAT_LLM", "RESPONSE", f"{trace_prefix}provider={provider}, model={effective_model}, chars={len(content or '')}", truncate_for_log(content))
+            return (content or '').strip()
 
-    raise ValueError(f"Fournisseur d'IA inconnu ou non supporté : {provider}")
+        if provider == 'anthropic':
+            import requests
+            res = requests.post(
+                'https://api.anthropic.com/v1/messages',
+                headers={
+                    'Content-Type': 'application/json',
+                    'x-api-key': api_key,
+                    'anthropic-version': '2023-06-01'
+                },
+                json={
+                    'model': effective_model,
+                    'max_tokens': 2000,
+                    'system': system_prompt,
+                    'messages': [{'role': 'user', 'content': user_prompt}],
+                    'temperature': 0.1
+                },
+                timeout=60
+            )
+            duration_ms = int((time.time() - started_at) * 1000)
+            log_event("REPORT_CHAT_LLM", "HTTP_RESPONSE", f"{trace_prefix}provider={provider}, status={res.status_code}, durationMs={duration_ms}", truncate_for_log(res.text))
+            res.raise_for_status()
+            content = res.json()['content'][0]['text']
+            log_event("REPORT_CHAT_LLM", "RESPONSE", f"{trace_prefix}provider={provider}, model={effective_model}, chars={len(content or '')}", truncate_for_log(content))
+            return (content or '').strip()
+
+        raise ValueError(f"Fournisseur d'IA inconnu ou non support? : {provider}")
+    except Exception as e:
+        duration_ms = int((time.time() - started_at) * 1000)
+        import traceback
+        log_event(
+            "REPORT_CHAT_LLM",
+            "ERROR",
+            f"{trace_prefix}provider={provider}, model={effective_model}, durationMs={duration_ms}, error={str(e)}",
+            traceback.format_exc()
+        )
+        raise
 
 
 @app.route('/api/projects/<id>/summary', methods=['POST'])
@@ -943,14 +1015,18 @@ def get_project_summary(id):
 @app.route('/api/projects/<id>/chat', methods=['POST'])
 def chat_with_project_report(id):
     try:
-        log_event("SERVER", "API", f"POST /api/projects/{id}/chat requested")
+        trace_id = uuid.uuid4().hex[:12]
+        started_at = time.time()
+        log_event("SERVER", "API", f"POST /api/projects/{id}/chat requested trace={trace_id}")
         project = db.get_project_by_id(id)
         if not project:
+            log_event("REPORT_CHAT", "NOT_FOUND", f"trace={trace_id} project={id}")
             return jsonify({"error": "Projet introuvable."}), 404
 
         body = request.get_json() or {}
         question = (body.get('message') or '').strip()
         if not question:
+            log_event("REPORT_CHAT", "BAD_REQUEST", f"trace={trace_id} empty question")
             return jsonify({"error": "Veuillez saisir une question."}), 400
 
         llm_config = {
@@ -960,15 +1036,40 @@ def chat_with_project_report(id):
         }
 
         provider = llm_config.get('llmProvider', 'local')
+        safe_body = {k: ('[REDACTED]' if k == 'llmApiKey' and v else v) for k, v in body.items()}
+        log_event(
+            "REPORT_CHAT",
+            "REQUEST",
+            f"trace={trace_id} project={id}, projectName={project.get('name')}, provider={provider}, model={llm_config.get('llmModel') or '-'}",
+            truncate_for_log(f"Question utilisateur:\n{question}\n\nBody sans cl? API:\n{json.dumps(safe_body, ensure_ascii=False)}", 20000)
+        )
         if should_anonymize_provider(provider) and not llm_config.get('llmApiKey'):
-            return jsonify({"error": "Clé API requise pour interroger le fournisseur LLM externe configuré."}), 400
+            log_event("REPORT_CHAT", "BAD_REQUEST", f"trace={trace_id} missing API key for provider={provider}")
+            return jsonify({"error": "Cl? API requise pour interroger le fournisseur LLM externe configur?."}), 400
 
         report_context = build_project_report_context(project)
+        log_event(
+            "REPORT_CHAT",
+            "CONTEXT_BUILT",
+            f"trace={trace_id} contextChars={len(report_context)}",
+            truncate_for_log(report_context, 60000)
+        )
         system_prompt = (
-            "Tu es un assistant RGESN intégré à un outil d'audit. "
-            "Réponds uniquement à partir du contexte de rapport fourni. "
+            "Tu es un assistant RGESN integre a un outil d'audit. "
+            "Reponds uniquement a partir du contexte de rapport fourni. "
             "Si une information n'est pas dans le contexte, dis-le clairement. "
-            "Sois concis, actionnable, en français, et cite les codes de critères utiles."
+            "Sois concis, actionnable, en francais, et cite les codes de criteres utiles. "
+            "IMPORTANT: reponds en texte simple, pas en Markdown. "
+            "N'utilise pas de titres Markdown, pas de gras avec **, pas de tableaux, pas de separateurs '---', "
+            "pas de listes imbriquees profondes. "
+            "Prefere des paragraphes courts et des lignes simples prefixees par '- ' si une liste est utile. "
+            "Ne recommande jamais de corriger un critere N/A comme s'il etait non valide; indique plutot qu'il est hors perimetre sauf si le contexte change. "
+            "Exemple de style attendu:\n"
+            "Priorite 1: Uxui13, Non-Valide, Prioritaire / Moyen.\n"
+            "Action: ajouter un controle clair pour desactiver les notifications ou remplacer les notifications par un canal moins intrusif.\n"
+            "Pourquoi: le rapport indique que ce critere est non valide et prioritaire.\n"
+            "Priorite 2: Str5, Manuel, Prioritaire / Fort.\n"
+            "Action: documenter les objectifs de reduction d'impact dans un fichier de gouvernance.\n"
         )
         user_prompt = (
             "CONTEXTE DU RAPPORT RGESN:\n"
@@ -977,7 +1078,14 @@ def chat_with_project_report(id):
             f"{question}"
         )
 
-        answer = call_configured_llm(llm_config, system_prompt, user_prompt)
+        answer = call_configured_llm(llm_config, system_prompt, user_prompt, trace_id=trace_id)
+        duration_ms = int((time.time() - started_at) * 1000)
+        log_event(
+            "REPORT_CHAT",
+            "RETURN",
+            f"trace={trace_id} durationMs={duration_ms}, answerChars={len(answer or '')}, anonymized={should_anonymize_provider(provider)}",
+            truncate_for_log(f"R?ponse finale envoy?e au front:\n{answer}")
+        )
         return jsonify({
             "answer": answer,
             "anonymized": should_anonymize_provider(provider)
@@ -985,8 +1093,9 @@ def chat_with_project_report(id):
 
     except Exception as e:
         import traceback
-        log_event("SERVER", "CHAT_ERROR", traceback.format_exc())
-        return jsonify({"error": f"Erreur lors de la réponse du chatbot : {str(e)}"}), 500
+        trace = locals().get('trace_id', 'no-trace')
+        log_event("SERVER", "CHAT_ERROR", f"trace={trace} {str(e)}", traceback.format_exc())
+        return jsonify({"error": f"Erreur lors de la r?ponse du chatbot : {str(e)}"}), 500
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
