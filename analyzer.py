@@ -73,11 +73,43 @@ def extract_json(text):
     except Exception as e:
         raise ValueError(f"Impossible de parser le JSON retourné par l'IA : {str(e)} (Clean text: {clean_text[:100]}...)")
 
+def should_anonymize_provider(provider):
+    return provider in ['openai', 'mistral', 'anthropic']
+
+def anonymize_for_external_llm(text):
+    if not text:
+        return ""
+    try:
+        from presidio_analyzer import AnalyzerEngine
+        from presidio_anonymizer import AnonymizerEngine
+
+        analyzer = AnalyzerEngine()
+        anonymizer = AnonymizerEngine()
+        results = analyzer.analyze(text=str(text), language="fr")
+        return anonymizer.anonymize(text=str(text), analyzer_results=results).text
+    except Exception:
+        anonymized = str(text)
+        patterns = [
+            (r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[EMAIL]'),
+            (r'https?://[^\s\]\)\}>"\']+', '[URL]'),
+            (r'\b(?:\d{1,3}\.){3}\d{1,3}\b', '[IP]'),
+            (r'\b(?:\+33|0)\s*[1-9](?:[\s.-]*\d{2}){4}\b', '[PHONE]'),
+            (r'(?i)\b(api[_-]?key|token|secret|password|passwd|bearer)\s*[:=]\s*[^\s,;]+', r'\1=[SECRET]'),
+            (r'(?i)\b(sk-[a-z0-9_-]{10,}|xox[baprs]-[a-z0-9-]+)\b', '[SECRET]'),
+            (r'(?i)\b(c:\\|/home/|/users/)[^\s\]\)\}>"\']+', '[PATH]'),
+        ]
+        for pattern, replacement in patterns:
+            anonymized = re.sub(pattern, replacement, anonymized)
+        return anonymized
+
 def query_llm(config, system_prompt, user_prompt):
     provider = config.get('llmProvider')
     model = config.get('llmModel')
     api_key = config.get('llmApiKey')
     model_name = model if model else 'default'
+    if should_anonymize_provider(provider):
+        system_prompt = anonymize_for_external_llm(system_prompt)
+        user_prompt = anonymize_for_external_llm(user_prompt)
 
     log_event("LLM_CLIENT", "REQUEST", f"Querying provider: {provider}, model: {model_name}", f"System Prompt:\n{system_prompt}\n\nUser Prompt:\n{user_prompt}")
 

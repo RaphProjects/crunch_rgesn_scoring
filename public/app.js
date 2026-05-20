@@ -64,6 +64,14 @@ const projectDate = document.getElementById('projectDate');
 const projectFiles = document.getElementById('projectFiles');
 const deleteProjectBtn = document.getElementById('deleteProjectBtn');
 const downloadPdfBtn = document.getElementById('downloadPdfBtn');
+const openReportChatBtn = document.getElementById('openReportChatBtn');
+const reportChatTab = document.getElementById('reportChatTab');
+const reportChatPanel = document.getElementById('reportChatPanel');
+const closeReportChatBtn = document.getElementById('closeReportChatBtn');
+const reportChatMessages = document.getElementById('reportChatMessages');
+const reportChatForm = document.getElementById('reportChatForm');
+const reportChatInput = document.getElementById('reportChatInput');
+const reportChatPrivacy = document.getElementById('reportChatPrivacy');
 
 const projectErrorAlert = document.getElementById('projectErrorAlert');
 const projectErrorMsg = document.getElementById('projectErrorMsg');
@@ -415,6 +423,9 @@ async function loadProjectDetails() {
       projectDashboardContent.classList.add('hidden');
       if (manualChatbotView) manualChatbotView.classList.add('hidden');
       if (downloadPdfBtn) downloadPdfBtn.classList.add('hidden');
+      if (openReportChatBtn) openReportChatBtn.classList.add('hidden');
+      if (reportChatTab) reportChatTab.classList.add('hidden');
+      closeReportChat();
       const diagCard = document.getElementById('llmDiagnosticCard');
       if (diagCard) diagCard.classList.add('hidden');
       
@@ -431,6 +442,9 @@ async function loadProjectDetails() {
       projectDashboardContent.classList.add('hidden');
       if (manualChatbotView) manualChatbotView.classList.add('hidden');
       if (downloadPdfBtn) downloadPdfBtn.classList.add('hidden');
+      if (openReportChatBtn) openReportChatBtn.classList.add('hidden');
+      if (reportChatTab) reportChatTab.classList.add('hidden');
+      closeReportChat();
       const diagCard = document.getElementById('llmDiagnosticCard');
       if (diagCard) diagCard.classList.add('hidden');
       
@@ -446,6 +460,8 @@ async function loadProjectDetails() {
       projectErrorAlert.classList.add('hidden');
       // Show PDF download button
       if (downloadPdfBtn) downloadPdfBtn.classList.remove('hidden');
+      if (openReportChatBtn) openReportChatBtn.classList.remove('hidden');
+      if (reportChatTab) reportChatTab.classList.remove('hidden');
 
       // LLM Diagnostics Rendering
       const diagCard = document.getElementById('llmDiagnosticCard');
@@ -963,6 +979,101 @@ deleteProjectBtn.addEventListener('click', async () => {
   }
 });
 
+function getProjectChatProvider() {
+  return (currentProject && currentProject.llmProvider) || llmProvider.value || 'local';
+}
+
+function getProjectChatModel(provider) {
+  return (currentProject && currentProject.llmModel) || localStorage.getItem('ecoaudit_model_' + provider) || llmModel.value || '';
+}
+
+function getProjectChatApiKey(provider) {
+  if (provider === 'local') return '';
+  return localStorage.getItem('ecoaudit_apikey_' + provider) || llmApiKey.value || '';
+}
+
+function openReportChat() {
+  if (!reportChatPanel) return;
+  const provider = getProjectChatProvider();
+  if (reportChatPrivacy) {
+    reportChatPrivacy.textContent = provider === 'local'
+      ? "Utilise le LLM local configuré. Les données restent envoyées au service local."
+      : "Fournisseur externe : le contexte et vos questions sont anonymisés côté serveur avant l'appel LLM.";
+  }
+  reportChatPanel.classList.remove('hidden');
+  if (reportChatInput) reportChatInput.focus();
+  lucide.createIcons();
+}
+
+function closeReportChat() {
+  if (reportChatPanel) reportChatPanel.classList.add('hidden');
+}
+
+function appendReportChatMessage(role, text) {
+  if (!reportChatMessages) return null;
+  const bubble = document.createElement('div');
+  bubble.className = `report-chat-bubble ${role}`;
+  bubble.textContent = text;
+  reportChatMessages.appendChild(bubble);
+  reportChatMessages.scrollTop = reportChatMessages.scrollHeight;
+  return bubble;
+}
+
+if (openReportChatBtn) {
+  openReportChatBtn.addEventListener('click', openReportChat);
+}
+
+if (reportChatTab) {
+  reportChatTab.addEventListener('click', openReportChat);
+}
+
+if (closeReportChatBtn) {
+  closeReportChatBtn.addEventListener('click', closeReportChat);
+}
+
+if (reportChatForm) {
+  reportChatForm.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    if (!currentProjectId || !reportChatInput) return;
+
+    const message = reportChatInput.value.trim();
+    if (!message) return;
+
+    const provider = getProjectChatProvider();
+    const model = getProjectChatModel(provider);
+    const apiKey = getProjectChatApiKey(provider);
+
+    appendReportChatMessage('user', message);
+    reportChatInput.value = '';
+    const pending = appendReportChatMessage('assistant', 'Réflexion en cours...');
+
+    try {
+      const res = await fetch(`/api/projects/${currentProjectId}/chat`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          message,
+          llmProvider: provider,
+          llmModel: model,
+          llmApiKey: apiKey
+        })
+      });
+
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error || "Erreur de réponse du chatbot.");
+
+      pending.textContent = data.answer || "Je n'ai pas pu produire de réponse exploitable.";
+      if (data.anonymized && reportChatPrivacy) {
+        reportChatPrivacy.textContent = "Fournisseur externe : contexte et question anonymisés avant envoi.";
+      }
+    } catch (err) {
+      pending.textContent = `Erreur : ${err.message}`;
+    } finally {
+      reportChatMessages.scrollTop = reportChatMessages.scrollHeight;
+    }
+  });
+}
+
 // PDF Download handler
 if (downloadPdfBtn) {
   downloadPdfBtn.addEventListener('click', async () => {
@@ -1000,6 +1111,8 @@ function showWelcomeView() {
   currentProject = null;
   welcomeView.classList.remove('hidden');
   projectView.classList.add('hidden');
+  if (reportChatTab) reportChatTab.classList.add('hidden');
+  closeReportChat();
   
   if (pollingInterval) {
     clearInterval(pollingInterval);

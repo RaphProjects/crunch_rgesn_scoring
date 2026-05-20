@@ -142,7 +142,10 @@
             </p>
           </div>
           <div class="project-actions">
-                        <button class="btn btn-primary btn-sm hidden" id="downloadPdfBtn">
+            <button class="btn btn-secondary btn-sm hidden" id="openReportChatBtn">
+              <i data-lucide="message-circle" class="btn-icon"></i> Chat rapport
+            </button>
+            <button class="btn btn-primary btn-sm hidden" id="downloadPdfBtn">
               <i data-lucide="download" class="btn-icon"></i> Télécharger le Rapport PDF
             </button>
             <button class="btn btn-danger btn-outline" id="deleteProjectBtn">
@@ -377,6 +380,35 @@
     </main>
 
   </div>
+
+  <button type="button" id="reportChatTab" class="report-chat-tab hidden">
+    <i data-lucide="message-circle"></i>
+    <span>Chat rapport</span>
+  </button>
+
+  <aside id="reportChatPanel" class="report-chat-panel hidden">
+    <div class="report-chat-header">
+      <div>
+        <span class="badge">Chatbot RGESN</span>
+        <h2>Questions sur le rapport</h2>
+        <p id="reportChatPrivacy">Le contexte suit la configuration LLM du projet.</p>
+      </div>
+      <button type="button" class="icon-btn" id="closeReportChatBtn" title="Fermer">
+        <i data-lucide="x"></i>
+      </button>
+    </div>
+    <div id="reportChatMessages" class="report-chat-messages">
+      <div class="report-chat-bubble assistant">
+        Posez une question sur les scores, les critères non validés, les justifications ou le plan d'action.
+      </div>
+    </div>
+    <form id="reportChatForm" class="report-chat-form">
+      <textarea id="reportChatInput" rows="2" placeholder="Ex: Quels critères corriger en priorité ?"></textarea>
+      <button type="submit" class="btn btn-primary btn-sm">
+        <i data-lucide="send" class="btn-icon"></i> Envoyer
+      </button>
+    </form>
+  </aside>
 
   <!-- JavaScript logic -->
   <script src="app.js"></script>

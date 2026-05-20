@@ -22,7 +22,7 @@ def sanitize_no_email(name):
 
 app = Flask(__name__, static_folder='public', static_url_path='')
 log_event("SERVER", "STARTUP", "Flask application initialized")
-PORT = int(os.environ.get('PORT', 3000))
+PORT = int(os.environ.get('PORT', 5000))
 
 uploads_dir = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(uploads_dir, exist_ok=True)
@@ -627,6 +627,168 @@ def build_criteria_context(non_validated: list) -> str:
     return '\n'.join(lines)
 
 
+def anonymize_for_external_llm(text: str) -> str:
+    """Anonymize likely personal or identifying data before external LLM calls."""
+    if not text:
+        return ""
+
+    try:
+        from presidio_analyzer import AnalyzerEngine
+        from presidio_anonymizer import AnonymizerEngine
+
+        analyzer = AnalyzerEngine()
+        anonymizer = AnonymizerEngine()
+        results = analyzer.analyze(text=text, language="fr")
+        return anonymizer.anonymize(text=text, analyzer_results=results).text
+    except Exception:
+        anonymized = str(text)
+        patterns = [
+            (r'[a-zA-Z0-9_.+-]+@[a-zA-Z0-9-]+\.[a-zA-Z0-9-.]+', '[EMAIL]'),
+            (r'https?://[^\s\]\)\}>"\']+', '[URL]'),
+            (r'\b(?:\d{1,3}\.){3}\d{1,3}\b', '[IP]'),
+            (r'\b(?:\+33|0)\s*[1-9](?:[\s.-]*\d{2}){4}\b', '[PHONE]'),
+            (r'\b[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}\b', '[EMAIL]'),
+            (r'(?i)\b(api[_-]?key|token|secret|password|passwd|bearer)\s*[:=]\s*[^\s,;]+', r'\1=[SECRET]'),
+            (r'(?i)\b(sk-[a-z0-9_-]{10,}|xox[baprs]-[a-z0-9-]+)\b', '[SECRET]'),
+            (r'(?i)\b(c:\\|/home/|/users/)[^\s\]\)\}>"\']+', '[PATH]'),
+        ]
+        for pattern, replacement in patterns:
+            anonymized = re.sub(pattern, replacement, anonymized)
+        return anonymized
+
+
+def should_anonymize_provider(provider: str) -> bool:
+    return provider in ['openai', 'mistral', 'anthropic']
+
+
+def build_project_report_context(project: dict) -> str:
+    criteria = project.get('criteria', {})
+    lines = [
+        f"Projet: {project.get('name', 'Projet')}",
+        f"Statut: {project.get('status', '-')}",
+        f"Mode d'analyse: {project.get('analysisMode', '-')}",
+        f"Score global: {project.get('globalScore', 0)}%",
+        f"Points: {project.get('totalPointsObtained', 0)} / {project.get('totalPointsMax', 0)}",
+        f"Fichiers analyses: {project.get('totalFiles', 0)}",
+        "",
+        "Scores par categorie:",
+    ]
+
+    for cat in project.get('categoryScores', []):
+        lines.append(
+            f"- {cat.get('name', '-')}: {cat.get('score', 0)}% "
+            f"({cat.get('validatedCount', 0)} valides, "
+            f"{cat.get('notValidatedCount', 0)} non-valides, "
+            f"{cat.get('manualCount', 0)} manuels)"
+        )
+
+    lines.extend(["", "Detail des criteres:"])
+    for code, crit in sorted(criteria.items()):
+        findings = crit.get('findings') or []
+        findings_text = "; ".join(str(f) for f in findings[:4])
+        lines.extend([
+            f"- {code} | {crit.get('status', '-')}",
+            f"  Categorie: {crit.get('category', '-')}",
+            f"  Critere: {crit.get('text', '-')}",
+            f"  Priorite / difficulte: {crit.get('priority', '-')} / {crit.get('difficulty', '-')}",
+            f"  Justification: {crit.get('justification', '-')}",
+        ])
+        if findings_text:
+            lines.append(f"  Indices: {findings_text}")
+
+    summary = project.get('llmActionPlan') or project.get('summary')
+    if summary:
+        lines.extend(["", "Synthese / plan d'action:", str(summary)])
+
+    return "\n".join(lines)[:30000]
+
+
+def call_configured_llm(llm_config: dict, system_prompt: str, user_prompt: str) -> str:
+    provider = llm_config.get('llmProvider', 'local')
+    if should_anonymize_provider(provider):
+        user_prompt = anonymize_for_external_llm(user_prompt)
+
+    model = llm_config.get('llmModel', '')
+    api_key = llm_config.get('llmApiKey', '')
+
+    if provider == 'local':
+        import ollama
+        response = ollama.chat(
+            model=model if model else 'qwen3:0.6b',
+            messages=[
+                {'role': 'system', 'content': system_prompt},
+                {'role': 'user', 'content': user_prompt}
+            ],
+            options={'temperature': 0.1}
+        )
+        return response['message']['content'].strip()
+
+    if provider == 'openai':
+        import requests
+        res = requests.post(
+            'https://api.openai.com/v1/chat/completions',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {api_key}'
+            },
+            json={
+                'model': model if model else 'gpt-4o-mini',
+                'messages': [
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_prompt}
+                ],
+                'temperature': 0.1
+            },
+            timeout=60
+        )
+        res.raise_for_status()
+        return res.json()['choices'][0]['message']['content'].strip()
+
+    if provider == 'mistral':
+        import requests
+        res = requests.post(
+            'https://api.mistral.ai/v1/chat/completions',
+            headers={
+                'Content-Type': 'application/json',
+                'Authorization': f'Bearer {api_key}'
+            },
+            json={
+                'model': model if model else 'mistral-tiny',
+                'messages': [
+                    {'role': 'system', 'content': system_prompt},
+                    {'role': 'user', 'content': user_prompt}
+                ],
+                'temperature': 0.1
+            },
+            timeout=60
+        )
+        res.raise_for_status()
+        return res.json()['choices'][0]['message']['content'].strip()
+
+    if provider == 'anthropic':
+        import requests
+        res = requests.post(
+            'https://api.anthropic.com/v1/messages',
+            headers={
+                'Content-Type': 'application/json',
+                'x-api-key': api_key,
+                'anthropic-version': '2023-06-01'
+            },
+            json={
+                'model': model if model else 'claude-3-5-haiku',
+                'max_tokens': 2000,
+                'system': system_prompt,
+                'messages': [{'role': 'user', 'content': user_prompt}],
+                'temperature': 0.1
+            },
+            timeout=60
+        )
+        res.raise_for_status()
+        return res.json()['content'][0]['text'].strip()
+
+    raise ValueError(f"Fournisseur d'IA inconnu ou non supporté : {provider}")
+
+
 @app.route('/api/projects/<id>/summary', methods=['POST'])
 def get_project_summary(id):
     try:
@@ -688,6 +850,8 @@ def get_project_summary(id):
             "**Étape 3 : [Titre de l'étape - ex: Hébergement & Maintenance]**\n"
             "- [Action de synthèse 1]\n"
         )
+        if should_anonymize_provider(llm_config.get('llmProvider', 'local')):
+            user_prompt = anonymize_for_external_llm(user_prompt)
         
         # Call LLM directly without JSON constraint to avoid infinite Qwen loops
         provider = llm_config.get('llmProvider', 'local')
@@ -766,6 +930,55 @@ def get_project_summary(id):
         if "ConnectionRefusedError" in error_msg or "Failed to establish a new connection" in error_msg or "connection" in error_msg.lower():
             error_msg = "Impossible de se connecter au service Ollama local. Veuillez vous assurer qu'Ollama est démarré et que le modèle requis est téléchargé."
         return jsonify({"error": f"Erreur lors de la génération du plan d'action : {error_msg}"}), 500
+
+
+@app.route('/api/projects/<id>/chat', methods=['POST'])
+def chat_with_project_report(id):
+    try:
+        log_event("SERVER", "API", f"POST /api/projects/{id}/chat requested")
+        project = db.get_project_by_id(id)
+        if not project:
+            return jsonify({"error": "Projet introuvable."}), 404
+
+        body = request.get_json() or {}
+        question = (body.get('message') or '').strip()
+        if not question:
+            return jsonify({"error": "Veuillez saisir une question."}), 400
+
+        llm_config = {
+            "llmProvider": body.get('llmProvider') or project.get('llmProvider') or 'local',
+            "llmModel": body.get('llmModel') or project.get('llmModel') or '',
+            "llmApiKey": body.get('llmApiKey', '')
+        }
+
+        provider = llm_config.get('llmProvider', 'local')
+        if should_anonymize_provider(provider) and not llm_config.get('llmApiKey'):
+            return jsonify({"error": "Clé API requise pour interroger le fournisseur LLM externe configuré."}), 400
+
+        report_context = build_project_report_context(project)
+        system_prompt = (
+            "Tu es un assistant RGESN intégré à un outil d'audit. "
+            "Réponds uniquement à partir du contexte de rapport fourni. "
+            "Si une information n'est pas dans le contexte, dis-le clairement. "
+            "Sois concis, actionnable, en français, et cite les codes de critères utiles."
+        )
+        user_prompt = (
+            "CONTEXTE DU RAPPORT RGESN:\n"
+            f"{report_context}\n\n"
+            "QUESTION UTILISATEUR:\n"
+            f"{question}"
+        )
+
+        answer = call_configured_llm(llm_config, system_prompt, user_prompt)
+        return jsonify({
+            "answer": answer,
+            "anonymized": should_anonymize_provider(provider)
+        })
+
+    except Exception as e:
+        import traceback
+        log_event("SERVER", "CHAT_ERROR", traceback.format_exc())
+        return jsonify({"error": f"Erreur lors de la réponse du chatbot : {str(e)}"}), 500
 
 @app.route('/', defaults={'path': ''})
 @app.route('/<path:path>')
