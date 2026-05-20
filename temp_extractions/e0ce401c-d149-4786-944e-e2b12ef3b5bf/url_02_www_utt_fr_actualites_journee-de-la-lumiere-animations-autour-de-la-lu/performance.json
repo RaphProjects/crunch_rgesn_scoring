@@ -1,0 +1,112 @@
+{
+  "url": "https://www.utt.fr/actualites/journee-de-la-lumiere-animations-autour-de-la-lumiere-et-les-couleurs-avec-lutt-a-la-cite-du-vitrail-le-23-mai-2026",
+  "pages": [
+    {
+      "url": "https://www.utt.fr/actualites/journee-de-la-lumiere-animations-autour-de-la-lumiere-et-les-couleurs-avec-lutt-a-la-cite-du-vitrail-le-23-mai-2026",
+      "filename": "index.html",
+      "status_code": 200,
+      "responseTimeMs": 1080,
+      "sizeBytes": 329481,
+      "headers": {
+        "Date": "Wed, 20 May 2026 11:54:29 GMT",
+        "Server": "Apache",
+        "content-type": "text/html;charset=UTF-8",
+        "content-language": "fr-FR",
+        "set-cookie": "JSESSIONID=3F85EE4CCC21DC1D9E5E75C8F60F9205.worker1; Path=/; Secure; HttpOnly; SameSite=None, SERVERID=app1; path=/",
+        "Vary": "Accept-Encoding",
+        "Content-Encoding": "gzip",
+        "Keep-Alive": "timeout=5, max=100",
+        "Connection": "Keep-Alive",
+        "Transfer-Encoding": "chunked"
+      }
+    },
+    {
+      "url": "https://www.utt.fr/",
+      "filename": "pages\\page_01_page_01.html",
+      "status_code": 200,
+      "responseTimeMs": 858,
+      "sizeBytes": 403829,
+      "headers": {
+        "Date": "Wed, 20 May 2026 11:54:30 GMT",
+        "Server": "Apache",
+        "content-type": "text/html;charset=UTF-8",
+        "content-language": "fr-FR",
+        "set-cookie": "JSESSIONID=0E94FFB1BC490BF9940C89715C4716A0.worker2; Path=/; Secure; HttpOnly; SameSite=None, SERVERID=app2; path=/",
+        "Vary": "Accept-Encoding",
+        "Content-Encoding": "gzip",
+        "Keep-Alive": "timeout=5, max=100",
+        "Connection": "Keep-Alive",
+        "Transfer-Encoding": "chunked"
+      }
+    },
+    {
+      "url": "https://www.utt.fr/brochures-utt",
+      "filename": "pages\\page_02_brochures-utt.html",
+      "status_code": 200,
+      "responseTimeMs": 1089,
+      "sizeBytes": 314848,
+      "headers": {
+        "Date": "Wed, 20 May 2026 11:54:31 GMT",
+        "Server": "Apache",
+        "content-type": "text/html;charset=UTF-8",
+        "content-language": "fr-FR",
+        "set-cookie": "JSESSIONID=EC83BA0C2480D5C97241CA4C9FAE1A2A.worker1; Path=/; Secure; HttpOnly; SameSite=None, SERVERID=app1; path=/",
+        "Vary": "Accept-Encoding",
+        "Content-Encoding": "gzip",
+        "Keep-Alive": "timeout=5, max=100",
+        "Connection": "Keep-Alive",
+        "Transfer-Encoding": "chunked"
+      }
+    },
+    {
+      "url": "https://www.utt.fr/alumni",
+      "filename": "pages\\page_03_alumni.html",
+      "status_code": 200,
+      "responseTimeMs": 1877,
+      "sizeBytes": 123877,
+      "headers": {
+        "Date": "Wed, 20 May 2026 11:54:33 GMT",
+        "Server": "Apache/2",
+        "Expires": "Thu, 19 Nov 1981 08:52:00 GMT",
+        "Cache-Control": "no-store, no-cache, must-revalidate",
+        "Pragma": "no-cache",
+        "Set-Cookie": "langue_selected=fr; expires=Fri, 19-Jun-2026 11:54:33 GMT; Max-Age=2592000; path=/; domain=.utt-alumni.fr; secure; HttpOnly; SameSite=Lax, as_id=1a28626c4c7ed0179cf441315be931c3; expires=Fri, 20-Nov-2026 12:54:33 GMT; Max-Age=15901200; path=/; domain=.utt-alumni.fr; secure; HttpOnly; SameSite=Lax",
+        "X-Frame-Options": "SAMEORIGIN",
+        "Vary": "Accept-Encoding,Origin",
+        "Content-Encoding": "gzip",
+        "X-XSS-Protection": "1; mode=block",
+        "X-Content-Type-Options": "nosniff",
+        "Access-Control-Allow-Credentials": "true",
+        "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+        "Content-Security-Policy": "default-src https: 'unsafe-eval' 'unsafe-inline' wss://*.hotjar.com *.hotjar.com data:;img-src * data: blob:; connect-src 'self' wss://*.hotjar.com *.hotjar.com *.hotjar.io *.addthis.com *.pa-cd.com lydia-app.com *.lydia-app.com *.openstreetmap.org maps.googleapis.com *.analytics.google.com *.google-analytics.com *.gstatic.com *.hcaptcha.com *.facebook.com *.raygun.io wss://*.crisp.chat *.cometchat.io *.api-eu.cometchat.io *.widget-eu.cometchat.io wss://*.websocket-eu.cometchat.io cdnjs.cloudflare.com https://app   ; object-src 'self' https://www.youtube.com https://www.dailymotion.com; frame-ancestors 'self' ; base-uri https://www.utt-alumni.fr/; form-action 'self' https://login.microsoftonline.com/ https://netanswer.rpxnow.com https://preprod-tpeweb.e-transactions.fr/ https://tpeweb.e-transactions.fr/ https://paiement.creditmutuel.fr https://systempay.cyberpluspaiement.com https://payment-webinit-mercanet.test.sips-atos.com/paymentInit https://payment-webinit-mercanet.test.sips-services.com/paymentInit https://payment-webinit.mercanet.bnpparibas.net/paymentInit https://old.pta.netanswer.fr https://www.paristech-alumni.org https://www.whats4u.org https://whats4u.org https://wats4u.com.alumnforce.org http://manageurs.mjb.lan https://manageurs.mjr1108.com https://www.xmp-consult.org https://tpeweb.paybox.com https://www.saferpay.com/  ",
+        "Keep-Alive": "timeout=15, max=5009",
+        "Connection": "Keep-Alive",
+        "Transfer-Encoding": "chunked",
+        "Content-Type": "text/html; charset=UTF-8"
+      }
+    },
+    {
+      "url": "https://www.utt.fr/bibliotheque",
+      "filename": "pages\\page_04_bibliotheque.html",
+      "status_code": 200,
+      "responseTimeMs": 896,
+      "sizeBytes": 173744,
+      "headers": {
+        "Cache-Control": "no-cache, no-store",
+        "Pragma": "no-cache",
+        "Content-Type": "text/html; charset=utf-8",
+        "Content-Encoding": "gzip",
+        "Expires": "-1",
+        "Vary": "Accept-Encoding",
+        "X-Content-Type-Options": "nosniff",
+        "Set-Cookie": "_syrSessGuid=f36ad444-f83e-4947-bd90-686fb9aa7211; expires=Wed, 20-May-2026 12:24:34 GMT; path=/; secure; HttpOnly; SameSite=Lax, _syrPrefsGuid=21627664-806f-4b5f-8b7b-5bc8d0fa0673; expires=Thu, 20-May-2027 11:54:34 GMT; path=/; secure; HttpOnly; SameSite=Lax, InstanceST=UTTY=000406GJQUdvDXQ3cNi5Uf_NvEWA1rhW0aI8FywOswK-mm3ZYuMZUqJuQkuxmmkOeS6dh/gtq1t4MGsNHPYH6vEo=; path=/; secure; HttpOnly; SameSite=None, InstanceCI=UTTY=2w_BFH2vf4CooVlbBVUpqYZv7vzEihdrflyfs-eF; path=/; secure; HttpOnly; SameSite=None",
+        "Referrer-Policy": "strict-origin-when-cross-origin",
+        "Content-Security-Policy": "default-src 'self'; form-action 'self'; script-src https: 'self' 'unsafe-eval' 'unsafe-inline'; object-src 'none'; style-src https: 'self' 'unsafe-inline'; img-src https: 'self' data: blob:; font-src 'self' data: https:; frame-src 'self' https: blob:; frame-ancestors 'self' https:; media-src 'self' blob:; connect-src 'self' https://*.google-analytics.com https://*.matomo.cloud",
+        "Strict-Transport-Security": "max-age=63072000; includeSubDomains; preload",
+        "Date": "Wed, 20 May 2026 11:54:34 GMT",
+        "Content-Length": "38630"
+      }
+    }
+  ],
+  "maxExtraPages": 4
+}

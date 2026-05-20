@@ -4,6 +4,8 @@ let currentProjectId = null;
 let currentProject = null;
 let criteriaDefinitions = [];
 let pollingInterval = null;
+let pollingProjectId = null;
+let isLoadingProjectDetails = false;
 let currentProjectSummary = null;
 let currentProjectSummaryId = null;
 let isFetchingSummary = false;
@@ -492,6 +494,7 @@ async function selectProject(projectId) {
   if (pollingInterval) {
     clearInterval(pollingInterval);
     pollingInterval = null;
+    pollingProjectId = null;
   }
 
   welcomeView.classList.add('hidden');
@@ -503,9 +506,12 @@ async function selectProject(projectId) {
 // Load current project details
 async function loadProjectDetails() {
   if (!currentProjectId) return;
+  if (isLoadingProjectDetails) return;
 
   try {
-    const res = await fetch(`/api/projects/${currentProjectId}`);
+    isLoadingProjectDetails = true;
+    const isPollingRequest = pollingProjectId === currentProjectId;
+    const res = await fetch(`/api/projects/${currentProjectId}${isPollingRequest ? '?poll=1' : ''}`);
     if (res.status === 404) {
       // If project was deleted, go back to welcome
       showWelcomeView();
@@ -552,12 +558,14 @@ async function loadProjectDetails() {
       
       // Start Polling
       if (!pollingInterval) {
-        pollingInterval = setInterval(loadProjectDetails, 1500);
+        pollingProjectId = currentProjectId;
+        pollingInterval = setInterval(loadProjectDetails, 3000);
       }
     } else if (currentProject.status === 'Erreur') {
       if (pollingInterval) {
         clearInterval(pollingInterval);
         pollingInterval = null;
+        pollingProjectId = null;
       }
       projectProcessingAlert.classList.add('hidden');
       projectDashboardContent.classList.add('hidden');
@@ -578,6 +586,7 @@ async function loadProjectDetails() {
       if (pollingInterval) {
         clearInterval(pollingInterval);
         pollingInterval = null;
+        pollingProjectId = null;
       }
       projectProcessingAlert.classList.add('hidden');
       projectErrorAlert.classList.add('hidden');
@@ -669,6 +678,8 @@ async function loadProjectDetails() {
 
   } catch (err) {
     console.error("Failed to load project details", err);
+  } finally {
+    isLoadingProjectDetails = false;
   }
 }
 
@@ -1426,6 +1437,7 @@ function showWelcomeView() {
   if (pollingInterval) {
     clearInterval(pollingInterval);
     pollingInterval = null;
+    pollingProjectId = null;
   }
   
   // Unhighlight list items

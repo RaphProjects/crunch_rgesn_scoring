@@ -76,7 +76,8 @@ def get_projects():
 @app.route('/api/projects/<id>', methods=['GET'])
 def get_project_by_id(id):
     try:
-        log_event("SERVER", "API", f"GET /api/projects/{id} requested")
+        if request.args.get('poll') != '1':
+            log_event("SERVER", "API", f"GET /api/projects/{id} requested")
         project = db.get_project_by_id(id)
         if not project:
             return jsonify({"error": "Projet introuvable."}), 404
