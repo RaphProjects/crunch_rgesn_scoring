@@ -222,10 +222,24 @@ def get_project_pdf(id):
             return COLOR_ACCENT
 
         def safe_text(text):
-            """Strip non-latin1 chars that fpdf can't render."""
-            if not text:
+            """Return text that legacy FPDF can encode with latin-1."""
+            if text is None:
                 return ''
-            return text.encode('latin-1', errors='replace').decode('latin-1')
+            replacements = {
+                '\u2013': '-',
+                '\u2014': '-',
+                '\u2018': "'",
+                '\u2019': "'",
+                '\u201c': '"',
+                '\u201d': '"',
+                '\u2026': '...',
+                '\u2192': '->',
+                '\u00a0': ' ',
+            }
+            clean = str(text)
+            for src, dst in replacements.items():
+                clean = clean.replace(src, dst)
+            return clean.encode('latin-1', errors='replace').decode('latin-1')
 
         def wrap_lines(text, width=90):
             """Wrap raw text into a list of lines ≤ width chars."""
@@ -245,9 +259,8 @@ def get_project_pdf(id):
                 self.set_y(-14)
                 self.set_font('Helvetica', 'I', 7)
                 self.set_text_color(*COLOR_MUTED)
-                self.cell(0, 6,
-                    f'Rapport RGESN  –  {safe_text(project.get("name","Projet"))}  –  Page {self.page_no()}',
-                    align='C')
+                footer_text = f'Rapport RGESN - {project.get("name","Projet")} - Page {self.page_no()}'
+                self.cell(0, 6, safe_text(footer_text), align='C')
 
         pdf = RGESNReport(orientation='P', unit='mm', format='A4')
         pdf.set_auto_page_break(auto=True, margin=18)
@@ -572,7 +585,8 @@ def get_project_pdf(id):
                 pdf.ln(3)
 
         # ── Output ────────────────────────────────────────────────────
-        pdf_bytes = bytes(pdf.output())
+        pdf_output = pdf.output(dest='S')
+        pdf_bytes = bytes(pdf_output) if isinstance(pdf_output, bytearray) else pdf_output.encode('latin-1')
         response = make_response(pdf_bytes)
         response.headers['Content-Type'] = 'application/pdf'
         safe_name = project.get('name','project').replace(' ', '_')[:40]
