@@ -1825,3 +1825,94 @@ a:hover {
   background-color: var(--bg-sidebar);
   color: var(--text-main);
 }
+
+.criteria-picker {
+  margin-top: 14px;
+  margin-bottom: 14px;
+}
+
+.criteria-picker-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+}
+
+.criteria-picker-header > div {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.criteria-picker-link {
+  border: none;
+  background: transparent;
+  color: #93c5fd;
+  font-size: 10px;
+  font-weight: 800;
+  cursor: pointer;
+  padding: 0;
+}
+
+.criteria-selection-summary {
+  margin-top: 6px;
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.criteria-selection-panel {
+  margin-top: 8px;
+  max-height: 230px;
+  overflow-y: auto;
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-sm);
+  background: rgba(0, 0, 0, 0.18);
+  padding: 8px;
+}
+
+.criteria-section-picker + .criteria-section-picker {
+  margin-top: 8px;
+  padding-top: 8px;
+  border-top: 1px solid rgba(255, 255, 255, 0.06);
+}
+
+.criteria-section-row {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  margin-bottom: 6px;
+}
+
+.criteria-section-row label,
+.criteria-mini-choice {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  color: var(--text-main);
+  font-size: 12px;
+  font-weight: 700;
+  cursor: pointer;
+}
+
+.criteria-section-row small {
+  color: var(--text-muted);
+  font-size: 10px;
+}
+
+.criteria-section-items {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.criteria-mini-choice {
+  color: var(--text-muted);
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 6px;
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.03);
+}

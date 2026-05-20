@@ -7,6 +7,7 @@ let pollingInterval = null;
 let currentProjectSummary = null;
 let currentProjectSummaryId = null;
 let isFetchingSummary = false;
+let selectedCriteriaCodes = new Set();
 
 // DOM Elements
 const dragArea = document.getElementById('dragArea');
@@ -20,6 +21,10 @@ const submitBtn = document.getElementById('submitBtn');
 const projectsList = document.getElementById('projectsList');
 
 const projectUrlInput = document.getElementById('projectUrl');
+const criteriaSelectionPanel = document.getElementById('criteriaSelectionPanel');
+const criteriaSelectionSummary = document.getElementById('criteriaSelectionSummary');
+const selectAllCriteriaBtn = document.getElementById('selectAllCriteriaBtn');
+const clearAllCriteriaBtn = document.getElementById('clearAllCriteriaBtn');
 
 // Auto-fill project name as user types a URL
 projectUrlInput.addEventListener('input', () => {
@@ -156,6 +161,90 @@ function updateFileDisplay(file) {
   }
 }
 
+async function loadCriteriaDefinitions() {
+  try {
+    const res = await fetch('/api/criteria');
+    criteriaDefinitions = await res.json();
+    selectedCriteriaCodes = new Set(criteriaDefinitions.map(c => c.code));
+    renderCriteriaSelection();
+  } catch (err) {
+    console.error('Failed to load criteria definitions', err);
+    if (criteriaSelectionSummary) {
+      criteriaSelectionSummary.textContent = "Impossible de charger le référentiel des critères.";
+    }
+  }
+}
+
+function groupCriteriaByCategory() {
+  return criteriaDefinitions.reduce((acc, crit) => {
+    const category = crit.category || 'Autre';
+    if (!acc[category]) acc[category] = [];
+    acc[category].push(crit);
+    return acc;
+  }, {});
+}
+
+function renderCriteriaSelection() {
+  if (!criteriaSelectionPanel || !criteriaSelectionSummary) return;
+  const total = criteriaDefinitions.length;
+  const selected = selectedCriteriaCodes.size;
+  criteriaSelectionSummary.textContent = `${selected} / ${total} critères sélectionnés`;
+
+  const groups = groupCriteriaByCategory();
+  criteriaSelectionPanel.innerHTML = Object.entries(groups).map(([category, items]) => {
+    const selectedCount = items.filter(item => selectedCriteriaCodes.has(item.code)).length;
+    const allSelected = selectedCount === items.length;
+    return `
+      <div class="criteria-section-picker">
+        <div class="criteria-section-row">
+          <label>
+            <input type="checkbox" ${allSelected ? 'checked' : ''} onchange="toggleCriteriaSection('${escapeHTML(category)}', this.checked)">
+            <span>${escapeHTML(category)}</span>
+          </label>
+          <small>${selectedCount}/${items.length}</small>
+        </div>
+        <div class="criteria-section-items">
+          ${items.map(item => `
+            <label class="criteria-mini-choice" title="${escapeHTML(item.text || '')}">
+              <input type="checkbox" ${selectedCriteriaCodes.has(item.code) ? 'checked' : ''} onchange="toggleCriteriaCode('${item.code}', this.checked)">
+              <span>${item.code}</span>
+            </label>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }).join('');
+}
+
+function toggleCriteriaCode(code, checked) {
+  if (checked) selectedCriteriaCodes.add(code);
+  else selectedCriteriaCodes.delete(code);
+  renderCriteriaSelection();
+}
+
+function toggleCriteriaSection(category, checked) {
+  const items = criteriaDefinitions.filter(crit => crit.category === category);
+  items.forEach(item => {
+    if (checked) selectedCriteriaCodes.add(item.code);
+    else selectedCriteriaCodes.delete(item.code);
+  });
+  renderCriteriaSelection();
+}
+
+if (selectAllCriteriaBtn) {
+  selectAllCriteriaBtn.addEventListener('click', () => {
+    selectedCriteriaCodes = new Set(criteriaDefinitions.map(c => c.code));
+    renderCriteriaSelection();
+  });
+}
+
+if (clearAllCriteriaBtn) {
+  clearAllCriteriaBtn.addEventListener('click', () => {
+    selectedCriteriaCodes.clear();
+    renderCriteriaSelection();
+  });
+}
+
 // --- LLM AND ANALYSIS OPTIONS TOGGLES ---
 modeRegexBtn.addEventListener('click', () => {
   modeRegexBtn.classList.add('active');
@@ -248,8 +337,16 @@ uploadForm.addEventListener('submit', async (e) => {
   // Append LLM configurations
   const activeMode = document.querySelector('.mode-btn.active').dataset.mode;
   const activeManualFlow = document.querySelector('.manual-flow-btn.active').dataset.flow;
+  if (criteriaDefinitions.length > 0 && selectedCriteriaCodes.size === 0) {
+    alert("Veuillez sélectionner au moins un critère à analyser.");
+    return;
+  }
+  const excludedCriteria = criteriaDefinitions
+    .map(crit => crit.code)
+    .filter(code => !selectedCriteriaCodes.has(code));
   formData.append('analysisMode', activeMode);
   formData.append('manualResolutionMode', activeManualFlow);
+  formData.append('excludedCriteria', JSON.stringify(excludedCriteria));
   
   if (activeMode === 'llm') {
     const provider = llmProvider.value;
@@ -473,6 +570,13 @@ async function loadProjectDetails() {
           document.getElementById('llmDiagProvider').textContent = currentProject.llmDiagnostic.provider.toUpperCase();
           document.getElementById('llmDiagModel').textContent = currentProject.llmDiagnostic.model;
           document.getElementById('llmDiagTime').textContent = (currentProject.llmDiagnostic.responseTime / 1000).toFixed(2) + 's';
+          const llmTargetCount = getLlmDiagnosticTargetCount(currentProject.llmDiagnostic);
+          const llmTargetCodes = currentProject.llmDiagnostic.targetCodes || [];
+          const targetCountEl = document.getElementById('llmDiagTargetCount');
+          if (targetCountEl) {
+            targetCountEl.textContent = `${llmTargetCount} critère${llmTargetCount > 1 ? 's' : ''}`;
+            targetCountEl.title = llmTargetCodes.length ? llmTargetCodes.join(', ') : 'Ancien audit : nombre estimé depuis la réponse brute';
+          }
           
           const statusBadge = document.getElementById('llmDiagStatusBadge');
           const errorContainer = document.getElementById('llmDiagErrorContainer');
@@ -510,7 +614,7 @@ async function loadProjectDetails() {
       
       // Render dashboard contents
       renderDashboard();
-      const shouldUseChatbot = currentProject.manualResolutionMode === 'chatbot' && getManualCriteria().length > 0;
+      const shouldUseChatbot = shouldOpenManualAssistant();
       if (shouldUseChatbot) {
         showManualChatbot();
       } else {
@@ -526,11 +630,27 @@ async function loadProjectDetails() {
 }
 
 // Render Dashboard
+function getLlmDiagnosticTargetCount(diagnostic) {
+  if (!diagnostic) return 0;
+  if (Number.isFinite(diagnostic.targetCount)) return diagnostic.targetCount;
+  if (Array.isArray(diagnostic.targetCodes)) return diagnostic.targetCodes.length;
+  const rawOutput = diagnostic.rawOutput || '';
+  const matches = rawOutput.match(/^--- Crit[èe]re /gm);
+  return matches ? matches.length : 0;
+}
+
 function getManualCriteria() {
   if (!currentProject || !currentProject.criteria) return [];
   return Object.values(currentProject.criteria)
     .filter(crit => crit.status === 'Manuel')
     .sort((a, b) => a.code.localeCompare(b.code, 'fr'));
+}
+
+function shouldOpenManualAssistant() {
+  if (!currentProject || getManualCriteria().length === 0) return false;
+  if (currentProject.manualResolutionMode === 'chatbot') return true;
+  if (currentProject.manualResolutionMode === 'classic') return false;
+  return currentProject.analysisMode === 'llm';
 }
 
 function showProjectDashboard() {
@@ -1074,6 +1194,15 @@ if (reportChatForm) {
   });
 }
 
+if (reportChatInput && reportChatForm) {
+  reportChatInput.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter' && !e.shiftKey) {
+      e.preventDefault();
+      reportChatForm.requestSubmit();
+    }
+  });
+}
+
 // PDF Download handler
 if (downloadPdfBtn) {
   downloadPdfBtn.addEventListener('click', async () => {
@@ -1251,24 +1380,30 @@ function parseMarkdownToHTML(markdown) {
 
 function getNegativeFormulation(code, originalText) {
   const formulations = {
-    'Str5': "Le service n'a pas été conçu avec des technologies interopérables standardisées (utilisation de technologies spécifiques ou fermées).",
+    'Str5': "Le service ne s'est pas fixé d'objectifs clairs de réduction ou limitation de ses impacts environnementaux.",
+    'Str9': "Le service n'a pas été conçu avec des technologies interopérables standardisées (utilisation de technologies spécifiques ou fermées).",
     'Spec1': "Le service n'a pas défini la liste des profils de matériels ou navigateurs cibles de ses utilisateurs.",
     'Spec2': "Le service n'est pas utilisable sur d'anciens modèles de terminaux.",
-    'Spec3': "Le service n'est pas utilisable sur d'anciennes versions de navigateurs ou de systèmes d'exploitation.",
-    'Spec4': "Le service ne s'adapte pas de manière fluide aux différents types de terminaux d'affichage (manque de responsive design).",
-    'Spec5': "Le service n'a pas prévu de stratégie de maintenance ou de décommissionnement technique.",
+    'Spec3': "Le service n'est pas utilisable via une connexion bas débit ou hors connexion.",
+    'Spec4': "Le service n'est pas utilisable sur d'anciennes versions de systèmes d'exploitation ou navigateurs.",
+    'Spec5': "Le service ne s'adapte pas de manière fluide aux différents types de terminaux d'affichage.",
+    'Spec7': "Le service n'a pas prévu de stratégie de maintenance ou de décommissionnement technique.",
     'Uxui1': "Le service contient des médias ou animations dont la lecture automatique (autoplay) est active.",
     'Uxui2': "Le service a recours à un défilement infini pour charger son contenu.",
-    'Uxui3': "Le service utilise des notifications système sans laisser la possibilité simple de les désactiver.",
-    'Cont1': "Le service n'utilise pas de définition de vidéo adaptée au contenu et au contexte de visualisation.",
-    'Cont2': "Le service propose des vidéos dont le mode de compression n'est pas optimal ou efficace.",
-    'Cont3': "Le service ne propose pas de mode d'écoute seule (sans vidéo) pour ses vidéos.",
-    'Bck2': "Le service n'a pas recours à un système de cache serveur pour ses données les plus utilisées.",
-    'Bck3': "Le service ne met pas en place de durées limites de conservation sur ses données.",
+    'Uxui13': "Le service utilise des notifications système sans laisser la possibilité simple de les désactiver.",
+    'Cont1': "Le service n'utilise pas de formats d'image adaptés au contenu et au contexte de visualisation.",
+    'Cont2': "Le service propose des images dont le niveau de compression n'est pas adapté.",
+    'Cont3': "Le service n'utilise pas de définition vidéo adaptée au contexte de visualisation.",
+    'Cont4': "Le service propose des vidéos dont le mode de compression n'est pas efficace ou adapté.",
+    'Cont5': "Le service ne propose pas de mode d'écoute seule pour ses vidéos.",
+    'Bck1': "Le service n'a pas recours à un système de cache serveur pour ses données les plus utilisées.",
+    'Bck2': "Le service ne met pas en place de durées limites de conservation sur ses données.",
     'Frnt1': "Le service ne s'astreint pas à un poids maximum et une limite de requête par écran.",
     'Frnt2': "Le service n'utilise pas de mécanismes de mise en cache client pour ses ressources.",
+    'Frnt3': "Le service ne compresse pas les ressources transférées dont il a le contrôle.",
     'Algo3': "Le service ne met pas en place de mécanismes visant à limiter la quantité d'entraînement nécessaire à ses modèles d'IA.",
-    'Algo6': "Le service n'utilise pas de stratégie d'inférence optimisée pour ses algorithmes d'IA."
+    'Algo6': "Le service n'utilise pas de techniques de compression pour ses modèles d'IA.",
+    'Algo7': "Le service n'utilise pas de stratégie d'inférence optimisée pour ses algorithmes d'IA."
   };
   
   return formulations[code] || originalText;
@@ -1330,6 +1465,7 @@ async function init() {
     });
   }
 
+  await loadCriteriaDefinitions();
   await loadProjectsList();
   lucide.createIcons();
 }

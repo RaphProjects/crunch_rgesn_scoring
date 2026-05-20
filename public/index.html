@@ -104,6 +104,18 @@
               </button>
             </div>
           </div>
+
+          <div class="form-group criteria-picker">
+            <div class="criteria-picker-header">
+              <label>Critères à analyser</label>
+              <div>
+                <button type="button" class="criteria-picker-link" id="selectAllCriteriaBtn">Tout sélectionner</button>
+                <button type="button" class="criteria-picker-link" id="clearAllCriteriaBtn">Tout désélectionner</button>
+              </div>
+            </div>
+            <div id="criteriaSelectionSummary" class="criteria-selection-summary">Chargement du référentiel...</div>
+            <div id="criteriaSelectionPanel" class="criteria-selection-panel"></div>
+          </div>
           
           <button type="submit" class="btn btn-primary btn-block" id="submitBtn">
             <i data-lucide="play" class="btn-icon"></i> Lancer l'Analyse
@@ -324,6 +336,10 @@
               <div>
                 <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Temps de réponse</p>
                 <p id="llmDiagTime" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
+              </div>
+              <div>
+                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Critères IA</p>
+                <p id="llmDiagTargetCount" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
               </div>
             </div>
             

@@ -4,6 +4,7 @@ import json
 import time
 import requests
 import ollama
+import subprocess
 from logger import log_event
 
 def clean_json_string(json_text):
@@ -195,6 +196,147 @@ def query_llm(config, system_prompt, user_prompt):
 
     raise ValueError(f"Fournisseur d'IA inconnu ou non supporté : {provider}")
 
+def extract_pdf_text(file_path, max_chars=12000):
+    try:
+        from pypdf import PdfReader
+        reader = PdfReader(file_path)
+        parts = []
+        for page in reader.pages[:20]:
+            text = page.extract_text() or ""
+            if text:
+                parts.append(text)
+            if sum(len(p) for p in parts) >= max_chars:
+                break
+        return "\n".join(parts)[:max_chars]
+    except Exception:
+        pass
+
+    try:
+        from PyPDF2 import PdfReader
+        reader = PdfReader(file_path)
+        parts = []
+        for page in reader.pages[:20]:
+            text = page.extract_text() or ""
+            if text:
+                parts.append(text)
+            if sum(len(p) for p in parts) >= max_chars:
+                break
+        return "\n".join(parts)[:max_chars]
+    except Exception:
+        pass
+
+    try:
+        completed = subprocess.run(
+            ["pdftotext", "-layout", file_path, "-"],
+            capture_output=True,
+            text=True,
+            timeout=20,
+            encoding="utf-8",
+            errors="ignore"
+        )
+        if completed.returncode == 0:
+            return completed.stdout[:max_chars]
+    except Exception:
+        pass
+
+    return ""
+
+def normalize_text_for_match(text):
+    text = (text or "").lower()
+    replacements = {
+        "é": "e", "è": "e", "ê": "e", "ë": "e",
+        "à": "a", "â": "a", "ä": "a",
+        "î": "i", "ï": "i",
+        "ô": "o", "ö": "o",
+        "ù": "u", "û": "u", "ü": "u",
+        "ç": "c", "œ": "oe", "æ": "ae",
+        "’": "'", "“": '"', "”": '"'
+    }
+    for src, dst in replacements.items():
+        text = text.replace(src, dst)
+    return re.sub(r"[^a-z0-9]+", " ", text)
+
+def extract_keywords(text, limit=10):
+    stopwords = {
+        "service", "numerique", "utilise", "utiliser", "avoir", "avec", "pour", "dans",
+        "dont", "des", "les", "une", "aux", "sur", "son", "ses", "leur", "leurs",
+        "est", "sont", "elle", "mise", "place", "recours", "adapte", "contexte",
+        "fonction", "fonctionnement", "utilisateur", "utilisateurs"
+    }
+    words = normalize_text_for_match(text).split()
+    keywords = []
+    for word in words:
+        if len(word) < 5 or word in stopwords:
+            continue
+        if word not in keywords:
+            keywords.append(word)
+        if len(keywords) >= limit:
+            break
+    return keywords
+
+def build_document_evidence(criteria_repo, file_contents):
+    docs = [
+        f for f in file_contents
+        if f.get('ext') in ['.md', '.txt', '.pdf'] or 'readme' in f.get('name', '').lower() or 'doc' in f.get('relPath', '').lower()
+    ]
+    evidence = {crit.get('code'): [] for crit in criteria_repo}
+    if not docs:
+        return evidence
+
+    for crit in criteria_repo:
+        code = crit.get('code')
+        keywords = extract_keywords(" ".join([
+            crit.get('text', ''),
+            crit.get('objective', ''),
+            crit.get('category', ''),
+            crit.get('target', ''),
+        ]), limit=14)
+        for doc in docs:
+            content = doc.get('content', '')
+            normalized = normalize_text_for_match(content)
+            has_code = bool(code and re.search(rf"\b{re.escape(code.lower())}\b", content.lower()))
+            score = sum(1 for kw in keywords if kw in normalized)
+            if has_code or score >= 4:
+                snippet = content[:900].replace("\r", " ").strip()
+                evidence[code].append({
+                    "file": doc.get('relPath'),
+                    "reason": "code cité" if has_code else f"{score} mots-clés concordants",
+                    "snippet": snippet
+                })
+                if len(evidence[code]) >= 3:
+                    break
+    return evidence
+
+def select_llm_target_codes(results, criteria_repo, document_evidence, target_count=35):
+    ordered_codes = [crit.get('code') for crit in criteria_repo if crit.get('code') in results]
+    selected = []
+
+    def add(code):
+        if code in results and code not in selected:
+            selected.append(code)
+
+    for code in ordered_codes:
+        if document_evidence.get(code):
+            add(code)
+
+    for code in ordered_codes:
+        if results[code].get('type') == 'auto':
+            add(code)
+
+    priority_codes = [
+        'Str1', 'Str2', 'Str5', 'Str6', 'Str7', 'Str8', 'Str10',
+        'Spec6', 'Spec8', 'Spec9', 'Spec10',
+        'Arch1', 'Arch2', 'Arch3', 'Arch4', 'Arch5', 'Arch6', 'Arch7',
+        'Uxui3', 'Uxui4', 'Uxui5', 'Uxui6', 'Uxui7', 'Uxui12', 'Uxui14', 'Uxui15',
+        'Heb1', 'Heb2', 'Heb3', 'Heb4', 'Heb5', 'Heb6', 'Heb7', 'Heb8', 'Heb9', 'Heb10',
+    ]
+    for code in priority_codes:
+        add(code)
+        if len(selected) >= target_count:
+            break
+
+    return [code for code in ordered_codes if code in selected][:target_count]
+
 def collect_project_context(dir_path, file_contents):
     file_tree = [f['relPath'] for f in file_contents]
     package_json = next((f for f in file_contents if f['name'] == 'package.json'), None)
@@ -215,6 +357,15 @@ def collect_project_context(dir_path, file_contents):
         context += f"\n--- CONFIGURATION DE DÉPLOIEMENT (Dockerfile) ---\n{dockerfile['content'][:1000]}\n"
     if readme:
         context += f"\n--- DOCUMENTATION DU PROJET (README) ---\n{readme['content'][:3000]}\n"
+
+    doc_files = [
+        f for f in file_contents
+        if f['ext'] in ['.md', '.txt', '.pdf'] and f is not readme
+    ]
+    if doc_files:
+        context += "\n--- DOCUMENTATION COMPLEMENTAIRE (.md/.txt/.pdf) ---\n"
+        for f in doc_files[:8]:
+            context += f"Fichier {f['relPath']} :\n{f['content'][:2500]}\n\n"
 
     html_files = [f for f in file_contents if f['ext'] == '.html']
     if html_files:
@@ -250,13 +401,61 @@ def get_all_files(dir_path, array_of_files=None):
             
     return array_of_files
 
-def analyze_directory(dir_path, llm_config=None):
+def is_uninteresting_file_name(path):
+    name = os.path.basename(path).lower()
+    rel = path.replace('\\', '/').lower()
+    ext = os.path.splitext(name)[1].lower()
+
+    always_keep = {
+        'package.json', 'requirements.txt', 'pyproject.toml', 'composer.json',
+        'dockerfile', 'docker-compose.yml', 'docker-compose.yaml',
+        'readme.md', 'readme.txt'
+    }
+    if name in always_keep or ext in ['.md', '.pdf']:
+        return False
+
+    generated_markers = [
+        '.min.', '.bundle.', '.chunk.', '.map', 'source-map', 'sourcemap',
+        'package-lock.json', 'yarn.lock', 'pnpm-lock.yaml', 'poetry.lock',
+        'license', 'licence', 'changelog', 'copying',
+        'jquery', 'bootstrap', 'vendor', 'polyfill', 'runtime~',
+        '__generated__', '.generated.', 'generated_', '_generated',
+        'swagger.json', 'openapi.json'
+    ]
+    if any(marker in name for marker in generated_markers):
+        return True
+
+    ignored_exts = {
+        '.map', '.lock', '.log', '.png', '.jpg', '.jpeg', '.gif', '.webp',
+        '.avif', '.ico', '.svg', '.woff', '.woff2', '.ttf', '.eot', '.mp4',
+        '.webm', '.mp3', '.wav'
+    }
+    if ext in ignored_exts:
+        return True
+
+    return any(part in rel for part in ['/coverage/', '/snapshots/', '/fixtures/', '/mocks/'])
+
+def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
     log_event("ANALYZER", "START", f"Starting static analysis for directory: {dir_path}")
     llm_diagnostic = None
     all_files = get_all_files(dir_path)
+    def file_read_priority(path):
+        name = os.path.basename(path).lower()
+        ext = os.path.splitext(path)[1].lower()
+        rel = os.path.relpath(path, dir_path).replace('\\', '/').lower()
+        if ext in ['.md', '.pdf'] or 'readme' in name or 'doc' in rel:
+            return 0
+        if name in ['package.json', 'requirements.txt', 'dockerfile'] or ext in ['.yaml', '.yml', '.json']:
+            return 1
+        if ext in ['.html', '.css', '.js', '.jsx', '.ts', '.tsx', '.py']:
+            return 2
+        return 3
+
+    all_files = [f for f in all_files if not is_uninteresting_file_name(f)]
+    all_files.sort(key=file_read_priority)
 
     file_contents = []
-    read_limit = 200
+    read_limit = 320
     files_read = 0
 
     for file in all_files:
@@ -280,6 +479,17 @@ def analyze_directory(dir_path, llm_config=None):
                 files_read += 1
             except Exception:
                 pass
+        elif ext == '.pdf':
+            content = extract_pdf_text(file)
+            if content:
+                file_contents.append({
+                    "path": file,
+                    "relPath": os.path.relpath(file, dir_path).replace('\\', '/'),
+                    "name": os.path.basename(file),
+                    "ext": ext,
+                    "content": content
+                })
+                files_read += 1
 
     has_videos = any(
         (f['ext'] == '.html' and ('<video' in f['content'] or '<source' in f['content'])) or
@@ -302,17 +512,24 @@ def analyze_directory(dir_path, llm_config=None):
             criteria_repo = json.load(f)
     except Exception:
         criteria_repo = []
+    excluded_criteria = set(excluded_criteria or [])
+    criteria_repo = [crit for crit in criteria_repo if crit.get('code') not in excluded_criteria]
 
     results = {}
     for crit in criteria_repo:
-        results[crit['code']] = {
-            "code": crit['code'],
-            "category": crit['category'],
-            "text": crit['text'],
-            "priority": crit['priority'],
-            "difficulty": crit['difficulty'],
-            "objective": crit['objective'],
-            "resources": crit['resources'],
+        code = crit.get('code')
+        if not code:
+            continue
+        results[code] = {
+            "code": code,
+            "category": crit.get('category', 'Autre'),
+            "text": crit.get('text', ''),
+            "priority": crit.get('priority', ''),
+            "difficulty": crit.get('difficulty', ''),
+            "objective": crit.get('objective', ''),
+            "target": crit.get('target', ''),
+            "role": crit.get('role', ''),
+            "resources": crit.get('resources', ''),
             "status": 'Manuel',
             "justification": 'Ce critère exige une évaluation humaine ou de gouvernance et ne peut pas être déduit du code source.',
             "type": 'manual',
@@ -330,7 +547,9 @@ def analyze_directory(dir_path, llm_config=None):
 
     # --- AUTOMATED RULES SCANNING ---
 
-    # 1. Str5
+    document_evidence = build_document_evidence(criteria_repo, file_contents)
+
+    # 1. Str9 - technologies standard interopérables
     str5_status = 'Validé'
     str5_justification = 'Aucune technologie propriétaire ou non-standard majeure détectée dans les fichiers de dépendances.'
     str5_findings = []
@@ -359,7 +578,7 @@ def analyze_directory(dir_path, llm_config=None):
         str5_justification = "Aucun fichier de dépendance standard (package.json, requirements.txt) n'a été détecté pour valider l'utilisation de standards interopérables."
         str5_findings.append("Aucun fichier package.json ou requirements.txt trouvé dans le projet.")
 
-    set_auto('Str5', str5_status, str5_justification, str5_findings)
+    set_auto('Str9', str5_status, str5_justification, str5_findings)
 
     # 2. Spec1
     spec1_status = 'Non-Validé'
@@ -383,14 +602,18 @@ def analyze_directory(dir_path, llm_config=None):
 
     set_auto('Spec1', spec1_status, spec1_justification, spec1_findings)
 
-    # 3. Spec2 & Spec3
+    # 3. Spec2, Spec3 & Spec4
     spec2_status = 'Non-Validé'
     spec2_justification = "Aucun mécanisme de rétrocompatibilité (Babel, polyfills, cible browserslist large) n'a été identifié."
     spec2_findings = []
 
     spec3_status = 'Non-Validé'
-    spec3_justification = "Aucun mécanisme de rétrocompatibilité (Babel, polyfills, cible browserslist large) n'a été identifié."
+    spec3_justification = "Aucun mécanisme d'utilisation bas débit ou hors connexion (Service Worker, mode offline, cache applicatif) n'a été identifié."
     spec3_findings = []
+
+    spec4_status = 'Non-Validé'
+    spec4_justification = "Aucun mécanisme de rétrocompatibilité (Babel, polyfills, cible browserslist large) n'a été identifié."
+    spec4_findings = []
 
     for f in package_json_files:
         try:
@@ -404,16 +627,22 @@ def analyze_directory(dir_path, llm_config=None):
                 spec2_justification = f"Présence de compilateurs/polyfills ({', '.join(found_polyfills)}) pour supporter d'anciens terminaux."
                 spec2_findings.append(f"Outils de rétrocompatibilité détectés : {', '.join(found_polyfills)}")
 
-                spec3_status = 'Validé'
-                spec3_justification = f"Présence de compilateurs/polyfills ({', '.join(found_polyfills)}) assurant le support d'anciennes versions d'OS/navigateurs."
-                spec3_findings.append(f"Outils de rétrocompatibilité détectés : {', '.join(found_polyfills)}")
+                spec4_status = 'Validé'
+                spec4_justification = f"Présence de compilateurs/polyfills ({', '.join(found_polyfills)}) assurant le support d'anciennes versions d'OS/navigateurs."
+                spec4_findings.append(f"Outils de rétrocompatibilité détectés : {', '.join(found_polyfills)}")
         except Exception:
             pass
 
+    if any('serviceworker' in f['content'].replace(' ', '').lower() or 'offline' in f['content'].lower() or 'caches.open' in f['content'] for f in file_contents):
+        spec3_status = 'Validé'
+        spec3_justification = "Présence d'indices de fonctionnement hors connexion ou de cache applicatif pour limiter les transferts."
+        spec3_findings.append("Service Worker, mode offline ou CacheStorage détecté.")
+
     set_auto('Spec2', spec2_status, spec2_justification, spec2_findings)
     set_auto('Spec3', spec3_status, spec3_justification, spec3_findings)
+    set_auto('Spec4', spec4_status, spec4_justification, spec4_findings)
 
-    # 4. Spec4
+    # 4. Spec5
     spec4_status = 'Non-Validé'
     spec4_justification = "Aucun élément d'adaptabilité d'affichage (responsive design) n'a été trouvé dans le code CSS ou HTML."
     spec4_findings = []
@@ -431,9 +660,9 @@ def analyze_directory(dir_path, llm_config=None):
                 spec4_justification = "Utilisation de règles CSS adaptatives (@media queries, flexbox, grid) pour le responsive design."
                 spec4_findings.append(f"Règles responsives/adaptatives détectées dans {f['relPath']}")
 
-    set_auto('Spec4', spec4_status, spec4_justification, spec4_findings)
+    set_auto('Spec5', spec4_status, spec4_justification, spec4_findings)
 
-    # 5. Spec5
+    # 5. Spec7
     spec5_status = 'Non-Validé'
     spec5_justification = "Aucune configuration CI/CD ou fichier Docker de déploiement n'a été trouvé pour évaluer la stratégie de maintenance technique et de nettoyage."
     spec5_findings = []
@@ -448,7 +677,7 @@ def analyze_directory(dir_path, llm_config=None):
                 detail += " Comporte des commandes de nettoyage/optimisation des ressources."
             spec5_findings.append(detail)
 
-    set_auto('Spec5', spec5_status, spec5_justification, spec5_findings)
+    set_auto('Spec7', spec5_status, spec5_justification, spec5_findings)
 
     # 6. Uxui1
     uxui1_status = 'Validé'
@@ -491,7 +720,7 @@ def analyze_directory(dir_path, llm_config=None):
 
     set_auto('Uxui2', uxui2_status, uxui2_justification, uxui2_findings)
 
-    # 8. Uxui3
+    # 8. Uxui13
     uxui3_status = 'Validé'
     uxui3_justification = "Le service n'utilise pas les APIs de notification système, limitant l'envoi de requêtes réseau intempestives."
     uxui3_findings = []
@@ -503,13 +732,67 @@ def analyze_directory(dir_path, llm_config=None):
                 uxui3_justification = "Le service numérique utilise les API de notifications ou de Push. Assurez-vous que l'utilisateur peut facilement les désactiver."
                 uxui3_findings.append(f"API de Notification système utilisée dans {f['relPath']}")
 
-    set_auto('Uxui3', uxui3_status, uxui3_justification, uxui3_findings)
+    set_auto('Uxui13', uxui3_status, uxui3_justification, uxui3_findings)
 
-    # 9. Cont1, Cont2, Cont3
+    font_findings = []
+    for f in file_contents:
+        if f['ext'] in ['.html', '.css']:
+            font_refs = re.findall(r'@font-face|fonts\.googleapis|\.woff2?|font-family', f['content'], re.IGNORECASE)
+            if font_refs:
+                font_findings.append(f"Références de polices détectées dans {f['relPath']}")
+    if not font_findings:
+        set_auto('Uxui8', 'Validé', "Aucune police distante ou police additionnelle téléchargée n'a été détectée.", ["Pas de @font-face ni Google Fonts détectés."])
+    else:
+        set_auto('Uxui8', 'Manuel', "Des polices personnalisées sont présentes ; il faut confirmer que leur nombre est limité.", font_findings[:5])
+
+    input_request_findings = []
+    for f in file_contents:
+        if f['ext'] in ['.js', '.jsx', '.ts', '.tsx']:
+            content_lower = f['content'].lower()
+            if any(k in content_lower for k in ['keyup', 'keydown', 'input', 'onchange']) and any(k in content_lower for k in ['fetch(', 'axios.', 'xmlhttprequest']):
+                input_request_findings.append(f"Requête réseau potentiellement déclenchée par saisie dans {f['relPath']}")
+    if input_request_findings:
+        set_auto('Uxui9', 'Manuel', "Des requêtes semblent liées à la saisie utilisateur ; la limitation/debounce doit être confirmée.", input_request_findings[:5])
+    else:
+        set_auto('Uxui9', 'Validé', "Aucun pattern de requête serveur déclenchée à la saisie utilisateur n'a été détecté.", ["Pas de fetch/axios couplé à input/key events détecté."])
+
+    form_findings = []
+    for f in file_contents:
+        if f['ext'] in ['.html', '.jsx', '.tsx']:
+            if '<form' in f['content'].lower() or 'type="file"' in f['content'].lower():
+                form_findings.append(f"Formulaire ou upload détecté dans {f['relPath']}")
+    if not form_findings:
+        set_auto('Uxui10', 'N/A', "Aucun formulaire utilisateur n'a été détecté dans les fichiers analysés.", ["Pas de balise <form> détectée."])
+        set_auto('Uxui11', 'N/A', "Aucun transfert de fichier utilisateur n'a été détecté dans les fichiers analysés.", ["Pas d'input file détecté."])
+    else:
+        set_auto('Uxui10', 'Manuel', "Des formulaires sont présents ; les indications de format de saisie doivent être confirmées.", form_findings[:5])
+        has_upload = any('type="file"' in f['content'].lower() for f in file_contents)
+        if has_upload:
+            set_auto('Uxui11', 'Manuel', "Un transfert de fichier est présent ; l'information préalable sur poids et formats doit être confirmée.", form_findings[:5])
+        else:
+            set_auto('Uxui11', 'N/A', "Aucun transfert de fichier utilisateur n'a été détecté.", ["Pas d'input file détecté."])
+
+    # 9. Cont1, Cont2, Cont3, Cont4, Cont5, Cont6, Cont7, Cont8
+    has_images = any(
+        (f['ext'] == '.html' and re.search(r'<img\b|<picture\b', f['content'], re.IGNORECASE)) or
+        any(ext in f['name'].lower() for ext in ['.png', '.jpg', '.jpeg', '.webp', '.avif', '.svg'])
+        for f in file_contents
+    )
+    if not has_images:
+        set_auto('Cont1', 'N/A', "Le projet ne comporte aucune image détectée dans les fichiers analysés.", ["Aucune balise <img>/<picture> ou image statique détectée."])
+        set_auto('Cont2', 'N/A', "Le projet ne comporte aucune image détectée dans les fichiers analysés.", ["Aucune balise <img>/<picture> ou image statique détectée."])
+    else:
+        modern_image = any(any(fmt in f['content'].lower() or fmt in f['name'].lower() for fmt in ['webp', 'avif', 'svg']) for f in file_contents)
+        status = 'Validé' if modern_image else 'Manuel'
+        justification = "Formats image sobres ou vectoriels détectés (WebP, AVIF ou SVG)." if modern_image else "Des images sont présentes, mais le niveau d'adaptation/compression doit être confirmé."
+        findings = ["Format image moderne détecté."] if modern_image else ["Images détectées sans preuve suffisante de format/compression adaptés."]
+        set_auto('Cont1', status, justification, findings)
+        set_auto('Cont2', status, justification, findings)
+
     if not has_videos:
-        set_auto('Cont1', 'N/A', "Le projet ne comporte aucun contenu vidéo détecté dans les fichiers HTML/JS.", ["Aucun tag <video> détecté."])
-        set_auto('Cont2', 'N/A', "Le projet ne comporte aucun contenu vidéo détecté dans les fichiers HTML/JS.", ["Aucun tag <video> détecté."])
         set_auto('Cont3', 'N/A', "Le projet ne comporte aucun contenu vidéo détecté dans les fichiers HTML/JS.", ["Aucun tag <video> détecté."])
+        set_auto('Cont4', 'N/A', "Le projet ne comporte aucun contenu vidéo détecté dans les fichiers HTML/JS.", ["Aucun tag <video> détecté."])
+        set_auto('Cont5', 'N/A', "Le projet ne comporte aucun contenu vidéo détecté dans les fichiers HTML/JS.", ["Aucun tag <video> détecté."])
     else:
         cont1_status = 'Non-Validé'
         cont1_justification = "Des balises vidéo sont présentes mais aucune source multiple (résolutions ou media-queries adaptées) n'a été détectée."
@@ -522,7 +805,7 @@ def analyze_directory(dir_path, llm_config=None):
                     cont1_status = 'Validé'
                     cont1_justification = "Détection de multiples balises <source> dans les vidéos, suggérant l'adaptation des formats selon la bande passante ou la taille d'affichage."
                     cont1_findings.append(f"{source_matches} balises <source> trouvées dans le fichier.")
-        set_auto('Cont1', cont1_status, cont1_justification, cont1_findings)
+        set_auto('Cont3', cont1_status, cont1_justification, cont1_findings)
 
         cont2_status = 'Non-Validé'
         cont2_justification = "Des vidéos sont présentes mais n'utilisent pas de codecs modernes et efficaces (WebM, AV1, H.265) dans les sources."
@@ -535,7 +818,7 @@ def analyze_directory(dir_path, llm_config=None):
                         cont2_status = 'Validé'
                         cont2_justification = f"Utilisation de formats de compression vidéo modernes et frugaux ({codec}) détectée."
                         cont2_findings.append(f"Codec moderne \"{codec}\" référencé dans {f['relPath']}")
-        set_auto('Cont2', cont2_status, cont2_justification, cont2_findings)
+        set_auto('Cont4', cont2_status, cont2_justification, cont2_findings)
 
         cont3_status = 'Non-Validé'
         cont3_justification = "Aucune option d'écoute seule (sans piste vidéo) n'a été détectée pour les flux vidéo."
@@ -548,9 +831,40 @@ def analyze_directory(dir_path, llm_config=None):
                         cont3_status = 'Validé'
                         cont3_justification = f"Détection d'un contrôle ou d'un terme suggérant un mode d'écoute audio seule (\"{kw}\")."
                         cont3_findings.append(f"Terminologie d'écoute seule trouvée : \"{kw}\" dans {f['relPath']}")
-        set_auto('Cont3', cont3_status, cont3_justification, cont3_findings)
+        set_auto('Cont5', cont3_status, cont3_justification, cont3_findings)
 
-    # 10. Bck2
+    has_audio = any(
+        (f['ext'] == '.html' and re.search(r'<audio\b', f['content'], re.IGNORECASE)) or
+        any(ext in f['name'].lower() for ext in ['.mp3', '.ogg', '.opus', '.wav'])
+        for f in file_contents
+    )
+    if not has_audio:
+        set_auto('Cont6', 'N/A', "Le projet ne comporte aucun contenu audio détecté.", ["Aucune balise <audio> ni fichier audio détecté."])
+    else:
+        efficient_audio = any(any(fmt in f['content'].lower() or fmt in f['name'].lower() for fmt in ['opus', 'ogg', 'webm']) for f in file_contents)
+        set_auto(
+            'Cont6',
+            'Validé' if efficient_audio else 'Manuel',
+            "Format audio efficace détecté." if efficient_audio else "Des contenus audio sont présents ; le mode de compression doit être confirmé.",
+            ["Audio Opus/Ogg/WebM détecté."] if efficient_audio else ["Contenu audio détecté."]
+        )
+
+    doc_exts = ['.pdf', '.doc', '.docx', '.ppt', '.pptx', '.xls', '.xlsx', '.odt', '.ods']
+    has_documents = any(any(f['name'].lower().endswith(ext) for ext in doc_exts) for f in file_contents)
+    if not has_documents:
+        set_auto('Cont7', 'N/A', "Aucun document téléchargeable n'a été détecté dans les fichiers analysés.", ["Pas de document bureautique/PDF détecté."])
+    else:
+        set_auto('Cont7', 'Manuel', "Des documents sont présents ; l'adaptation du format au contexte d'utilisation doit être confirmée.", ["Document téléchargeable détecté."])
+
+    archive_keywords = ['archive', 'archivage', 'obsolete', 'obsolète', 'perime', 'périmé', 'cleanup', 'purge', 'retention']
+    archive_findings = []
+    for f in file_contents:
+        if any(kw in f['content'].lower() for kw in archive_keywords):
+            archive_findings.append(f"Stratégie d'archivage/suppression mentionnée dans {f['relPath']}")
+    if archive_findings:
+        set_auto('Cont8', 'Validé', "Une stratégie d'archivage ou suppression des contenus obsolètes est mentionnée.", archive_findings[:5])
+
+    # 10. Bck1
     bck2_status = 'Non-Validé'
     bck2_justification = "Aucun mécanisme de cache serveur (Redis, Memcached, cache HTTP, cache-manager) n'a été identifié."
     bck2_findings = []
@@ -577,9 +891,9 @@ def analyze_directory(dir_path, llm_config=None):
                     bck2_justification = f"Utilisation de l'API de cache serveur (\"{kw}\") détectée dans le code backend."
                     bck2_findings.append(f"Code de cache trouvé : \"{kw}\" dans {f['relPath']}")
 
-    set_auto('Bck2', bck2_status, bck2_justification, bck2_findings)
+    set_auto('Bck1', bck2_status, bck2_justification, bck2_findings)
 
-    # 11. Bck3
+    # 11. Bck2
     bck3_status = 'Non-Validé'
     bck3_justification = "Aucun mécanisme de conservation limitée ou de nettoyage des données obsolètes (TTL, archivage automatique, scripts de purge) n'a été détecté."
     bck3_findings = []
@@ -590,7 +904,25 @@ def analyze_directory(dir_path, llm_config=None):
             bck3_justification = "Mécanisme d'archivage ou de suppression automatique détecté (TTL, requête de purge, cron job)."
             bck3_findings.append(f"Pattern de rétention de données trouvé dans {f['relPath']}")
 
-    set_auto('Bck3', bck3_status, bck3_justification, bck3_findings)
+    set_auto('Bck2', bck3_status, bck3_justification, bck3_findings)
+
+    background_findings = []
+    for f in file_contents:
+        content_lower = f['content'].lower()
+        if any(k in content_lower for k in ['queue', 'worker', 'background job', 'celery', 'bullmq', 'sidekiq', 'progress', 'status']) and any(k in content_lower for k in ['poll', 'websocket', 'sse', 'progress', 'notification']):
+            background_findings.append(f"Traitement arrière-plan ou suivi d'état détecté dans {f['relPath']}")
+    if background_findings:
+        set_auto('Bck3', 'Validé', "Des mécanismes de traitement en arrière-plan ou de suivi utilisateur sont détectés.", background_findings[:5])
+
+    consensus_keywords = ['blockchain', 'proof-of-work', 'proof of work', 'pow', 'consensus', 'mining', 'ethereum']
+    consensus_findings = []
+    for f in file_contents:
+        if any(k in f['content'].lower() for k in consensus_keywords):
+            consensus_findings.append(f"Mécanisme de consensus potentiel détecté dans {f['relPath']}")
+    if not consensus_findings:
+        set_auto('Bck4', 'N/A', "Aucun mécanisme de consensus distribué n'a été détecté.", ["Pas de blockchain/mining/consensus détecté."])
+    else:
+        set_auto('Bck4', 'Manuel', "Un mécanisme de consensus est potentiellement présent ; sa sobriété doit être confirmée.", consensus_findings[:5])
 
     # 12. Frnt1
     frnt1_status = 'Non-Validé'
@@ -644,10 +976,47 @@ def analyze_directory(dir_path, llm_config=None):
 
     set_auto('Frnt2', frnt2_status, frnt2_justification, frnt2_findings)
 
-    # 14. Algo3 & Algo6
+    compression_findings = []
+    if any(k in ''.join(f['content'][:2000] for f in file_contents).lower() for k in ['gzip', 'brotli', 'br ', 'compression', 'zstd']):
+        compression_findings.append("Configuration ou mention de compression de transfert détectée.")
+        set_auto('Frnt3', 'Validé', "Des mécanismes de compression de ressources transférées sont mentionnés ou configurés.", compression_findings)
+
+    lazy_findings = []
+    for f in file_contents:
+        if any(k in f['content'].lower() for k in ['loading="lazy"', 'lazyload', 'intersectionobserver', 'dynamic import(', 'import(']):
+            lazy_findings.append(f"Chargement différé ou conditionnel détecté dans {f['relPath']}")
+    if lazy_findings:
+        set_auto('Frnt5', 'Validé', "Le code contient des mécanismes de chargement différé ou conditionnel limitant les ressources inutilisées.", lazy_findings[:5])
+
+    sensor_keywords = ['geolocation', 'devicemotion', 'deviceorientation', 'getusermedia', 'accelerometer', 'gyroscope']
+    sensor_findings = []
+    for f in file_contents:
+        if f['ext'] in ['.js', '.jsx', '.ts', '.tsx', '.html']:
+            for kw in sensor_keywords:
+                if kw in f['content'].lower():
+                    sensor_findings.append(f"API capteur \"{kw}\" détectée dans {f['relPath']}")
+    if not sensor_findings:
+        set_auto('Frnt6', 'N/A', "Aucun usage de capteurs de terminaux utilisateurs n'a été détecté.", ["Pas d'API capteur détectée."])
+    else:
+        set_auto('Frnt6', 'Manuel', "Des APIs capteurs sont présentes ; leur stricte nécessité doit être confirmée.", sensor_findings[:5])
+
+    static_domains = set()
+    for f in file_contents:
+        if f['ext'] in ['.html', '.css', '.js']:
+            static_domains.update(re.findall(r'https?://([^/"\']+)', f['content']))
+    if static_domains:
+        status = 'Validé' if len(static_domains) <= 1 else 'Manuel'
+        set_auto('Frnt7', status, f"{len(static_domains)} domaine(s) externe(s) de ressources statiques détecté(s).", [f"Domaine: {d}" for d in sorted(static_domains)[:8]])
+
+    # 14. Algo1-7
     if not has_ml:
+        set_auto('Algo1', 'N/A', "Le projet ne fait pas usage de modèles d'intelligence artificielle ou de machine learning.", ["Pas de librairies ML détectées."])
+        set_auto('Algo2', 'N/A', "Le projet ne fait pas usage de modèles d'intelligence artificielle ou de machine learning.", ["Pas de librairies ML détectées."])
         set_auto('Algo3', 'N/A', "Le projet ne fait pas usage de modèles d'intelligence artificielle ou de machine learning (TensorFlow, PyTorch, Scikit-learn non détectés).", ["Pas de librairies ML détectées."])
-        set_auto('Algo6', 'N/A', "Le projet ne fait pas usage de modèles d'intelligence artificielle ou de machine learning (TensorFlow, PyTorch, Scikit-learn non détectés).", ["Pas de librairies ML détectées."])
+        set_auto('Algo4', 'N/A', "Le projet ne fait pas usage de modèles d'intelligence artificielle ou de machine learning.", ["Pas de librairies ML détectées."])
+        set_auto('Algo5', 'N/A', "Le projet ne fait pas usage de modèles d'intelligence artificielle ou de machine learning.", ["Pas de librairies ML détectées."])
+        set_auto('Algo6', 'N/A', "Le projet ne fait pas usage de modèles d'intelligence artificielle ou de machine learning.", ["Pas de librairies ML détectées."])
+        set_auto('Algo7', 'N/A', "Le projet ne fait pas usage de modèles d'intelligence artificielle ou de machine learning.", ["Pas de librairies ML détectées."])
     else:
         # Algo3
         algo3_status = 'Non-Validé'
@@ -663,19 +1032,29 @@ def analyze_directory(dir_path, llm_config=None):
                         algo3_findings.append(f"Pattern d'entraînement économe trouvé : \"{kw}\" dans {f['relPath']}")
         set_auto('Algo3', algo3_status, algo3_justification, algo3_findings)
 
-        # Algo6
+        # Algo6 / Algo7
         algo6_status = 'Non-Validé'
-        algo6_justification = "Présence de librairies ML, mais aucune optimisation d'inférence (quantification, élagage, ONNX, TFLite) n'a été détectée."
+        algo6_justification = "Présence de librairies ML, mais aucune compression de modèle (quantification, élagage, formats compacts) n'a été détectée."
         algo6_findings = []
+        algo7_status = 'Non-Validé'
+        algo7_justification = "Présence de librairies ML, mais aucune stratégie d'inférence optimisée (ONNX, TFLite, TensorRT, batch adapté) n'a été détectée."
+        algo7_findings = []
         for f in file_contents:
             if f['ext'] in ['.py', '.js']:
-                inference_keywords = ['quantize', 'quantization', 'prune', 'pruning', 'onnx', 'tfjs', 'tflite', 'tensorrt', 'convert_to_onnx']
-                for kw in inference_keywords:
+                compression_keywords = ['quantize', 'quantization', 'prune', 'pruning', 'distillation', 'compress']
+                inference_keywords = ['onnx', 'tfjs', 'tflite', 'tensorrt', 'convert_to_onnx', 'batch_size', 'inference']
+                for kw in compression_keywords:
                     if kw in f['content'].lower():
                         algo6_status = 'Validé'
-                        algo6_justification = f"Stratégie d'inférence optimisée détectée via quantification, élagage ou format optimisé (\"{kw}\")."
-                        algo6_findings.append(f"Pattern d'inférence économe trouvé : \"{kw}\" dans {f['relPath']}")
+                        algo6_justification = f"Technique de compression ou réduction de modèle détectée (\"{kw}\")."
+                        algo6_findings.append(f"Compression de modèle trouvée : \"{kw}\" dans {f['relPath']}")
+                for kw in inference_keywords:
+                    if kw in f['content'].lower():
+                        algo7_status = 'Validé'
+                        algo7_justification = f"Stratégie d'inférence optimisée détectée via format ou exécution optimisée (\"{kw}\")."
+                        algo7_findings.append(f"Pattern d'inférence économe trouvé : \"{kw}\" dans {f['relPath']}")
         set_auto('Algo6', algo6_status, algo6_justification, algo6_findings)
+        set_auto('Algo7', algo7_status, algo7_justification, algo7_findings)
 
     # --- LLM REFINEMENT PIPELINE ---
     if llm_config and llm_config.get('analysisMode') == 'llm':
@@ -692,11 +1071,7 @@ def analyze_directory(dir_path, llm_config=None):
             log_event("ANALYZER", "LLM_START", f"Running LLM-assisted analysis using provider: {provider}, model: {model}")
             project_context = collect_project_context(dir_path, file_contents)
 
-            llm_target_codes = [
-                'Str5', 'Spec1', 'Spec2', 'Spec3', 'Spec4', 'Spec5',
-                'Uxui1', 'Uxui2', 'Uxui3', 'Cont1', 'Cont2', 'Cont3',
-                'Bck2', 'Bck3', 'Frnt1', 'Frnt2', 'Algo3', 'Algo6'
-            ]
+            llm_target_codes = select_llm_target_codes(results, criteria_repo, document_evidence)
             full_raw_output = ""
 
             for code in llm_target_codes:
@@ -707,6 +1082,8 @@ def analyze_directory(dir_path, llm_config=None):
                 system_prompt = f"""Tu es un auditeur expert du Référentiel Général d'Éco-conception de Services Numériques (RGESN).
 Ton rôle est de valider ou corriger la pré-analyse statique (regex) pour UN SEUL critère : "{code}".
 Voici le texte du critère à évaluer : "{initial['text']}"
+Objectif du critère : "{initial.get('objective', '')}"
+Cible / contexte d'applicabilité : "{initial.get('target', '')}"
 
 Tu dois renvoyer STRICTEMENT ET UNIQUEMENT un objet JSON valide pour ce critère, sans aucun texte explicatif avant ou après.
 
@@ -719,7 +1096,7 @@ Format attendu pour ton JSON :
 
 CONSIGNES DE RIGUEUR EXTRÊME :
 1. Ne valide pas paresseusement. Sois extrêmement critique : si le code manque de configuration ou présente un anti-pattern flagrant, retourne "Non-Validé". 
-2. Si le projet n'utilise manifestement pas la fonctionnalité associée (ex: pas de vidéo pour les critères Cont1-3, pas d'IA pour Algo3-6), retourne ABSOLUMENT ET IMPÉRATIVEMENT "N/A". Ne mets jamais "Non-Validé" si le service ne comporte aucune vidéo ou aucun modèle d'IA !
+2. Si le projet n'utilise manifestement pas la fonctionnalité associée (ex: pas de vidéo pour les critères Cont3-5, pas d'IA pour Algo1-7), retourne ABSOLUMENT ET IMPÉRATIVEMENT "N/A". Ne mets jamais "Non-Validé" si le service ne comporte aucune vidéo ou aucun modèle d'IA !
 3. Si les éléments ne te permettent pas de conclure avec certitude, utilise "Manuel"."""
 
                 user_prompt = f"""Détails structurels et extraits de fichiers du projet :
@@ -729,6 +1106,7 @@ Résultat de notre pré-analyse statique (Regex) pour le critère "{code}" :
 - Statut pré-détecté : "{initial['status']}"
 - Justification initiale : "{initial['justification']}"
 - Indices (findings) trouvés : {json.dumps(initial['findings'], ensure_ascii=False)}
+- Indices documentaires trouvés : {json.dumps(document_evidence.get(code, []), ensure_ascii=False)}
 
 Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'objet JSON contenant "status", "justification" et "findings"."""
 
@@ -743,9 +1121,9 @@ Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'obj
                         new_status = parsed_data['status']
                         
                         # Programmatic post-processing: enforce N/A for video / ML if not present
-                        if code in ['Cont1', 'Cont2', 'Cont3'] and not has_videos:
+                        if code in ['Cont3', 'Cont4', 'Cont5'] and not has_videos:
                             new_status = 'N/A'
-                        if code in ['Algo3', 'Algo6'] and not has_ml:
+                        if code in ['Algo1', 'Algo2', 'Algo3', 'Algo4', 'Algo5', 'Algo6', 'Algo7'] and not has_ml:
                             new_status = 'N/A'
                             
                         results[code]["status"] = new_status
@@ -763,6 +1141,8 @@ Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'obj
                 "provider": provider,
                 "model": model,
                 "responseTime": duration,
+                "targetCount": len(llm_target_codes),
+                "targetCodes": llm_target_codes,
                 "rawOutput": full_raw_output.strip()
             }
             log_event("ANALYZER", "LLM_COMPLETE", f"LLM-assisted analysis completed successfully in {duration}ms!")

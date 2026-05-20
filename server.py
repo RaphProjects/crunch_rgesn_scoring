@@ -80,6 +80,13 @@ def upload_project():
         manual_resolution_mode = request.form.get('manualResolutionMode', 'classic')
         if manual_resolution_mode not in ['classic', 'chatbot']:
             manual_resolution_mode = 'classic'
+        try:
+            excluded_criteria = json.loads(request.form.get('excludedCriteria', '[]'))
+            if not isinstance(excluded_criteria, list):
+                excluded_criteria = []
+            excluded_criteria = [str(code) for code in excluded_criteria]
+        except Exception:
+            excluded_criteria = []
         llm_provider = request.form.get('llmProvider', '')
         llm_api_key = request.form.get('llmApiKey', '')
         llm_model = request.form.get('llmModel', '')
@@ -126,6 +133,7 @@ def upload_project():
             "error": None,
             "analysisMode": analysis_mode,
             "manualResolutionMode": manual_resolution_mode,
+            "excludedCriteria": excluded_criteria,
             "llmProvider": llm_provider,
             "llmModel": llm_model
         }
@@ -137,7 +145,7 @@ def upload_project():
             "llmProvider": llm_provider,
             "llmApiKey": llm_api_key,
             "llmModel": llm_model
-        }, url=url if url else None)
+        }, url=url if url else None, excluded_criteria=excluded_criteria)
 
         return jsonify({
             "success": True,

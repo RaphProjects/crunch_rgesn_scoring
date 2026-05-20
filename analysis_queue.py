@@ -99,13 +99,14 @@ class AnalysisQueue:
         self.processing = False
         self.worker_thread = None
 
-    def enqueue(self, project_id, zip_file_path, original_name, llm_config=None, url=None):
+    def enqueue(self, project_id, zip_file_path, original_name, llm_config=None, url=None, excluded_criteria=None):
         self.job_queue.put({
             "projectId": project_id,
             "zipFilePath": zip_file_path,
             "originalName": original_name,
             "llmConfig": llm_config,
-            "url": url
+            "url": url,
+            "excludedCriteria": excluded_criteria or []
         })
         log_event("QUEUE", "ENQUEUE", f"Job enqueued for project {project_id}. Queue size: {self.job_queue.qsize()}")
         
@@ -125,6 +126,7 @@ class AnalysisQueue:
             zip_file_path = job["zipFilePath"]
             llm_config = job["llmConfig"]
             url = job.get("url")
+            excluded_criteria = job.get("excludedCriteria", [])
 
             log_event("QUEUE", "JOB_START", f"Starting analysis for project {project_id}...")
 
@@ -165,7 +167,7 @@ class AnalysisQueue:
                 file_count = count_files(extract_dir)
 
                 log_event("QUEUE", "ANALYZE_START", f"Running static/LLM analyzer on project {project_id}...")
-                criteria, llm_diagnostic = analyze_directory(extract_dir, llm_config)
+                criteria, llm_diagnostic = analyze_directory(extract_dir, llm_config, excluded_criteria=excluded_criteria)
 
                 scores = db.calculate_project_scores(criteria)
 
