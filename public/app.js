@@ -46,6 +46,8 @@ projectUrlInput.addEventListener('input', () => {
 // LLM Settings DOM Elements
 const modeRegexBtn = document.getElementById('modeRegexBtn');
 const modeLlmBtn = document.getElementById('modeLlmBtn');
+const manualFlowClassicBtn = document.getElementById('manualFlowClassicBtn');
+const manualFlowChatbotBtn = document.getElementById('manualFlowChatbotBtn');
 const llmOptionsPanel = document.getElementById('llmOptionsPanel');
 const llmProvider = document.getElementById('llmProvider');
 const apiKeyGroup = document.getElementById('apiKeyGroup');
@@ -67,6 +69,10 @@ const projectErrorAlert = document.getElementById('projectErrorAlert');
 const projectErrorMsg = document.getElementById('projectErrorMsg');
 const projectProcessingAlert = document.getElementById('projectProcessingAlert');
 const projectDashboardContent = document.getElementById('projectDashboardContent');
+const manualChatbotView = document.getElementById('manualChatbotView');
+const manualChatbotProgress = document.getElementById('manualChatbotProgress');
+const manualChatbotMessages = document.getElementById('manualChatbotMessages');
+const manualChatbotExitBtn = document.getElementById('manualChatbotExitBtn');
 
 const globalScorePercent = document.getElementById('globalScorePercent');
 const scorePointsObtained = document.getElementById('scorePointsObtained');
@@ -157,6 +163,18 @@ modeLlmBtn.addEventListener('click', () => {
   localStorage.setItem('ecoaudit_mode', 'llm');
 });
 
+manualFlowClassicBtn.addEventListener('click', () => {
+  manualFlowClassicBtn.classList.add('active');
+  manualFlowChatbotBtn.classList.remove('active');
+  localStorage.setItem('ecoaudit_manual_flow', 'classic');
+});
+
+manualFlowChatbotBtn.addEventListener('click', () => {
+  manualFlowChatbotBtn.classList.add('active');
+  manualFlowClassicBtn.classList.remove('active');
+  localStorage.setItem('ecoaudit_manual_flow', 'chatbot');
+});
+
 // Toggle API Key input based on provider
 llmProvider.addEventListener('change', () => {
   const provider = llmProvider.value;
@@ -221,7 +239,9 @@ uploadForm.addEventListener('submit', async (e) => {
 
   // Append LLM configurations
   const activeMode = document.querySelector('.mode-btn.active').dataset.mode;
+  const activeManualFlow = document.querySelector('.manual-flow-btn.active').dataset.flow;
   formData.append('analysisMode', activeMode);
+  formData.append('manualResolutionMode', activeManualFlow);
   
   if (activeMode === 'llm') {
     const provider = llmProvider.value;
@@ -393,6 +413,7 @@ async function loadProjectDetails() {
       projectErrorAlert.classList.add('hidden');
       projectProcessingAlert.classList.remove('hidden');
       projectDashboardContent.classList.add('hidden');
+      if (manualChatbotView) manualChatbotView.classList.add('hidden');
       if (downloadPdfBtn) downloadPdfBtn.classList.add('hidden');
       const diagCard = document.getElementById('llmDiagnosticCard');
       if (diagCard) diagCard.classList.add('hidden');
@@ -408,6 +429,7 @@ async function loadProjectDetails() {
       }
       projectProcessingAlert.classList.add('hidden');
       projectDashboardContent.classList.add('hidden');
+      if (manualChatbotView) manualChatbotView.classList.add('hidden');
       if (downloadPdfBtn) downloadPdfBtn.classList.add('hidden');
       const diagCard = document.getElementById('llmDiagnosticCard');
       if (diagCard) diagCard.classList.add('hidden');
@@ -422,7 +444,6 @@ async function loadProjectDetails() {
       }
       projectProcessingAlert.classList.add('hidden');
       projectErrorAlert.classList.add('hidden');
-      projectDashboardContent.classList.remove('hidden');
       // Show PDF download button
       if (downloadPdfBtn) downloadPdfBtn.classList.remove('hidden');
 
@@ -473,6 +494,12 @@ async function loadProjectDetails() {
       
       // Render dashboard contents
       renderDashboard();
+      const shouldUseChatbot = currentProject.manualResolutionMode === 'chatbot' && getManualCriteria().length > 0;
+      if (shouldUseChatbot) {
+        showManualChatbot();
+      } else {
+        showProjectDashboard();
+      }
     }
     
     lucide.createIcons();
@@ -483,6 +510,106 @@ async function loadProjectDetails() {
 }
 
 // Render Dashboard
+function getManualCriteria() {
+  if (!currentProject || !currentProject.criteria) return [];
+  return Object.values(currentProject.criteria)
+    .filter(crit => crit.status === 'Manuel')
+    .sort((a, b) => a.code.localeCompare(b.code, 'fr'));
+}
+
+function showProjectDashboard() {
+  projectDashboardContent.classList.remove('hidden');
+  if (manualChatbotView) manualChatbotView.classList.add('hidden');
+}
+
+function showManualChatbot() {
+  if (!manualChatbotView) return;
+  projectDashboardContent.classList.add('hidden');
+  manualChatbotView.classList.remove('hidden');
+  renderManualChatbot();
+  manualChatbotView.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+
+function renderManualChatbot() {
+  if (!manualChatbotMessages) return;
+  const manualCriteria = getManualCriteria();
+  const answeredCount = currentProject && currentProject.criteria
+    ? Object.values(currentProject.criteria).filter(crit => crit.type === 'manual' && crit.status !== 'Manuel').length
+    : 0;
+
+  if (manualCriteria.length === 0) {
+    manualChatbotProgress.textContent = 'Toutes les questions manuelles ont été traitées.';
+    manualChatbotMessages.innerHTML = `
+      <div class="chat-message">
+        <h3>Auto-déclaration terminée</h3>
+        <p>Les scores ont été recalculés avec vos réponses. Vous pouvez consulter le tableau de bord complet.</p>
+        <div class="chat-actions" style="grid-template-columns: 1fr;">
+          <button type="button" class="btn btn-primary" onclick="showProjectDashboard()">
+            <i data-lucide="layout-dashboard" class="btn-icon"></i> Voir le tableau de bord
+          </button>
+        </div>
+      </div>
+    `;
+    lucide.createIcons();
+    return;
+  }
+
+  const current = manualCriteria[0];
+  manualChatbotProgress.textContent = `${manualCriteria.length} critère(s) à évaluer • ${answeredCount} réponse(s) enregistrée(s)`;
+  manualChatbotMessages.innerHTML = `
+    <div class="chat-message">
+      <p>Je vais vous poser les critères restés en mode manuel un par un. Pour celui-ci, choisissez le statut qui reflète votre contexte réel.</p>
+    </div>
+    <div class="chat-message">
+      <h3>${escapeHTML(current.code)} - ${escapeHTML(current.category || 'Critère RGESN')}</h3>
+      <p>${escapeHTML(current.text || '')}</p>
+      <div class="chat-criterion-meta">
+        <span class="prio-pill ${(current.priority || '').toLowerCase()}">${escapeHTML(current.priority || '-')}</span>
+        <span class="diff-pill ${(current.difficulty || '').toLowerCase()}">${escapeHTML(current.difficulty || '-')}</span>
+      </div>
+      <p>${escapeHTML(current.objective || current.justification || 'Indiquez le statut applicable pour votre service numérique.')}</p>
+      <div class="chat-actions">
+        <button class="segment-btn" type="button" onclick="answerManualChatbot('${current.code}', 'Validé')">
+          <i data-lucide="check-circle-2"></i> Validé
+        </button>
+        <button class="segment-btn" type="button" onclick="answerManualChatbot('${current.code}', 'Non-Validé')">
+          <i data-lucide="x-circle"></i> Non-validé
+        </button>
+        <button class="segment-btn" type="button" onclick="answerManualChatbot('${current.code}', 'N/A')">
+          <i data-lucide="slash"></i> Non applicable
+        </button>
+      </div>
+    </div>
+  `;
+  lucide.createIcons();
+}
+
+async function answerManualChatbot(code, newStatus) {
+  if (!currentProjectId) return;
+  try {
+    const res = await fetch(`/api/projects/${currentProjectId}/manual`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ updates: { [code]: newStatus } })
+    });
+    const data = await res.json();
+    if (!res.ok) throw new Error(data.error || "Erreur de mise à jour");
+
+    currentProject = data.project;
+    const projIdx = projects.findIndex(p => p.id === currentProjectId);
+    if (projIdx !== -1) {
+      projects[projIdx].globalScore = currentProject.globalScore;
+      projects[projIdx].categoryScores = currentProject.categoryScores;
+    }
+
+    renderProjectsList();
+    renderDashboard();
+    renderManualChatbot();
+  } catch (err) {
+    alert(err.message);
+  }
+}
+
 function renderDashboard() {
   if (!currentProject) return;
 
@@ -807,6 +934,12 @@ async function updateManualStatus(code, newStatus, event) {
 }
 
 // Delete current project
+if (manualChatbotExitBtn) {
+  manualChatbotExitBtn.addEventListener('click', () => {
+    showProjectDashboard();
+  });
+}
+
 deleteProjectBtn.addEventListener('click', async () => {
   if (!currentProjectId) return;
 
@@ -1032,6 +1165,7 @@ function getNegativeFormulation(code, originalText) {
 async function init() {
   // Restore analysis options from localStorage
   const savedMode = localStorage.getItem('ecoaudit_mode') || 'regex';
+  const savedManualFlow = localStorage.getItem('ecoaudit_manual_flow') || 'classic';
   const savedProvider = localStorage.getItem('ecoaudit_provider') || 'local';
   
   llmProvider.value = savedProvider;
@@ -1045,6 +1179,14 @@ async function init() {
     modeRegexBtn.classList.add('active');
     modeLlmBtn.classList.remove('active');
     llmOptionsPanel.classList.add('hidden');
+  }
+
+  if (savedManualFlow === 'chatbot') {
+    manualFlowChatbotBtn.classList.add('active');
+    manualFlowClassicBtn.classList.remove('active');
+  } else {
+    manualFlowClassicBtn.classList.add('active');
+    manualFlowChatbotBtn.classList.remove('active');
   }
   
   // Trigger provider change to toggle visibility and restore fields

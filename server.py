@@ -77,6 +77,9 @@ def upload_project():
 
         project_id = str(uuid.uuid4())
         analysis_mode = request.form.get('analysisMode', 'regex')
+        manual_resolution_mode = request.form.get('manualResolutionMode', 'classic')
+        if manual_resolution_mode not in ['classic', 'chatbot']:
+            manual_resolution_mode = 'classic'
         llm_provider = request.form.get('llmProvider', '')
         llm_api_key = request.form.get('llmApiKey', '')
         llm_model = request.form.get('llmModel', '')
@@ -122,6 +125,7 @@ def upload_project():
             "categoryScores": [],
             "error": None,
             "analysisMode": analysis_mode,
+            "manualResolutionMode": manual_resolution_mode,
             "llmProvider": llm_provider,
             "llmModel": llm_model
         }

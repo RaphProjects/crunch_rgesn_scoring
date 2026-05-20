@@ -1508,7 +1508,8 @@ a:hover {
   box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.2);
 }
 
-.mode-btn {
+.mode-btn,
+.manual-flow-btn {
   flex: 1;
   background: transparent;
   border: none;
@@ -1525,16 +1526,112 @@ a:hover {
   transition: var(--transition-smooth);
 }
 
-.mode-btn:hover {
+.mode-btn:hover,
+.manual-flow-btn:hover {
   color: var(--text-main);
   background: rgba(255, 255, 255, 0.02);
 }
 
-.mode-btn.active {
+.mode-btn.active,
+.manual-flow-btn.active {
   background: rgba(59, 130, 246, 0.15);
   border: 1px solid rgba(59, 130, 246, 0.3);
   color: #60a5fa;
   box-shadow: 0 4px 12px rgba(59, 130, 246, 0.15);
+}
+
+.manual-chatbot-view {
+  max-width: 960px;
+  margin: 0 auto;
+}
+
+.manual-chatbot-shell {
+  min-height: calc(100vh - 190px);
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--border-radius-lg);
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+.manual-chatbot-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 22px 24px;
+  border-bottom: 1px solid var(--card-border);
+}
+
+.manual-chatbot-header h2 {
+  margin: 10px 0 4px;
+  font-size: 24px;
+}
+
+.manual-chatbot-header p {
+  color: var(--text-muted);
+  font-size: 13px;
+}
+
+.manual-chatbot-messages {
+  padding: 24px;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.chat-message {
+  max-width: 760px;
+  padding: 16px;
+  border-radius: var(--border-radius-md);
+  border: 1px solid var(--card-border);
+  background: rgba(255, 255, 255, 0.035);
+}
+
+.chat-message.user {
+  align-self: flex-end;
+  background: rgba(59, 130, 246, 0.12);
+  border-color: rgba(59, 130, 246, 0.25);
+}
+
+.chat-message h3 {
+  font-size: 16px;
+  margin-bottom: 8px;
+}
+
+.chat-message p {
+  color: var(--text-muted);
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+.chat-criterion-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin: 12px 0;
+}
+
+.chat-actions {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 10px;
+  margin-top: 16px;
+}
+
+.chat-actions .segment-btn {
+  justify-content: center;
+}
+
+@media (max-width: 720px) {
+  .manual-chatbot-header {
+    flex-direction: column;
+  }
+
+  .chat-actions {
+    grid-template-columns: 1fr;
+  }
 }
 
 .llm-options-panel {
@@ -1578,4 +1675,3 @@ a:hover {
   background-color: var(--bg-sidebar);
   color: var(--text-main);
 }
-
