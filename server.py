@@ -102,6 +102,8 @@ def upload_project():
 
         project_id = str(uuid.uuid4())
         analysis_mode = request.form.get('analysisMode', 'regex')
+        if analysis_mode not in ['regex', 'llm']:
+            analysis_mode = 'regex'
         manual_resolution_mode = request.form.get('manualResolutionMode', 'classic')
         if manual_resolution_mode not in ['classic', 'chatbot']:
             manual_resolution_mode = 'classic'
@@ -112,9 +114,14 @@ def upload_project():
             excluded_criteria = [str(code) for code in excluded_criteria]
         except Exception:
             excluded_criteria = []
-        llm_provider = request.form.get('llmProvider', '')
-        llm_api_key = request.form.get('llmApiKey', '')
-        llm_model = request.form.get('llmModel', '')
+        if analysis_mode == 'llm':
+            llm_provider = request.form.get('llmProvider', '')
+            llm_api_key = request.form.get('llmApiKey', '')
+            llm_model = request.form.get('llmModel', '')
+        else:
+            llm_provider = ''
+            llm_api_key = ''
+            llm_model = ''
 
         file_path = None
         original_name = ""
@@ -166,13 +173,17 @@ def upload_project():
         db.add_project(new_project)
 
         log_event("SERVER", "UPLOAD_SUCCESS", f"Enqueued project '{project_name}' (ID: {project_id}) for mode: {analysis_mode}, provider: {llm_provider}")
-        analysis_queue.enqueue(project_id, file_path, original_name, {
-            "analysisMode": analysis_mode,
-            "manualResolutionMode": manual_resolution_mode,
-            "llmProvider": llm_provider,
-            "llmApiKey": llm_api_key,
-            "llmModel": llm_model
-        }, url=urls, excluded_criteria=excluded_criteria)
+        queued_llm_config = None
+        if analysis_mode == 'llm':
+            queued_llm_config = {
+                "analysisMode": analysis_mode,
+                "manualResolutionMode": manual_resolution_mode,
+                "llmProvider": llm_provider,
+                "llmApiKey": llm_api_key,
+                "llmModel": llm_model
+            }
+
+        analysis_queue.enqueue(project_id, file_path, original_name, queued_llm_config, url=urls, excluded_criteria=excluded_criteria)
 
         return jsonify({
             "success": True,

@@ -261,7 +261,9 @@ class AnalysisQueue:
 
                 file_count = count_files(extract_dir)
 
-                log_event("QUEUE", "ANALYZE_START", f"Running static/LLM analyzer on project {project_id}...")
+                queued_mode = (llm_config or {}).get("analysisMode", "regex")
+                analyzer_label = "static + LLM" if queued_mode == "llm" else "static regex only"
+                log_event("QUEUE", "ANALYZE_START", f"Running {analyzer_label} analyzer on project {project_id}...")
                 criteria, llm_diagnostic, file_inventory = analyze_directory(extract_dir, llm_config, excluded_criteria=excluded_criteria)
                 manual_count = len([crit for crit in criteria.values() if crit.get("status") == "Manuel"])
                 log_event(
