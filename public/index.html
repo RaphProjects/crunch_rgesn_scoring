@@ -7,144 +7,207 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Plus+Jakarta+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="style.css">
+  <link rel="stylesheet" href="style.css?v=20260520-intro-md">
+  <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.7.2/css/all.min.css" crossorigin="anonymous" referrerpolicy="no-referrer">
   <!-- Lucide Icons -->
   <script src="https://unpkg.com/lucide@latest"></script>
 </head>
 <body>
-  <div class="app-container">
-    
-    <!-- Sidebar: Projects & Ingestion -->
-    <aside class="sidebar">
-      <div class="sidebar-header">
+  <div class="app-container" id="appContainer">
+
+    <!-- Landing: single viewport, no page scroll -->
+    <div id="homeView" class="home-view">
+      <header class="home-top-bar">
         <div class="logo">
           <i data-lucide="leaf" class="logo-icon"></i>
           <span>EcoAudit <small>RGESN</small></span>
         </div>
-        <a class="official-rgesn-link" href="https://ecoresponsable.numerique.gouv.fr/publications/referentiel-general-ecoconception/" target="_blank" rel="noopener noreferrer">
-          <i data-lucide="external-link"></i>
-          Référentiel officiel
-        </a>
-      </div>
-      
-      <!-- Upload Section -->
-      <div class="upload-box">
-        <h3>Nouvelle Évaluation</h3>
-        <p class="upload-desc">Déposez l'archive ZIP et/ou saisissez l'URL de votre site pour analyser sa conformité RGESN.</p>
-        
-        <form id="uploadForm">
-          <div class="form-group">
-            <label for="projectName">Nom du Projet</label>
-            <input type="text" id="projectName" placeholder="ex: Mon Application Web" required>
-          </div>
+        <div class="home-top-actions">
+          <button type="button" class="btn btn-secondary btn-sm" id="openHistoryBtn">
+            <i data-lucide="history" class="btn-icon"></i> Historique
+          </button>
+          <a class="official-rgesn-link" href="https://ecoresponsable.numerique.gouv.fr/publications/referentiel-general-ecoconception/" target="_blank" rel="noopener noreferrer">
+            <i data-lucide="external-link"></i>
+            Référentiel officiel
+          </a>
+        </div>
+      </header>
 
-          <div class="form-group" style="margin-bottom: 12px;">
-            <label>Fichier ZIP du Code (Optionnel)</label>
-            <div class="drag-area" id="dragArea" style="margin-top: 4px;">
-              <i data-lucide="upload-cloud" class="drag-icon"></i>
-              <span class="drag-text">Glissez & Déposez le ZIP ou</span>
-              <button type="button" class="btn btn-secondary btn-sm" id="browseBtn">Parcourir</button>
-              <input type="file" id="fileInput" accept=".zip" hidden>
+      <div class="home-main">
+        <section class="home-intro">
+          <div class="home-intro-content">
+            <div class="home-intro-badge">
+              <i data-lucide="shield-check"></i>
+              <span>RGESN</span>
             </div>
-            <div id="fileInfo" class="file-info hidden" style="margin-top: 4px;">
-              <i data-lucide="file-archive" class="file-icon"></i>
-              <span id="fileName">project.zip</span>
-              <button type="button" id="removeFileBtn"><i data-lucide="x"></i></button>
-            </div>
+            <h1>Écoconception logicielle</h1>
+            <p class="home-hero-lead">
+              Mesurez et améliorez la sobriété numérique de vos applications web grâce au <strong>Référentiel Général d'Écoconception des Services Numériques</strong>.
+            </p>
+            <p class="home-hero-detail">
+              Téléversez le code source, renseignez l'URL de votre site, puis obtenez un rapport de conformité détaillé avec scores par catégorie, critères audités et plan d'action priorisé.
+            </p>
+            <ul class="feature-strip">
+              <li>
+                <i data-lucide="binary"></i>
+                <div class="feature-strip-text">
+                  <strong>Scan statique</strong>
+                  <span>Analyse automatique du code, des assets et des dépendances techniques.</span>
+                </div>
+              </li>
+              <li>
+                <i data-lucide="edit-3"></i>
+                <div class="feature-strip-text">
+                  <strong>Déclaration guidée</strong>
+                  <span>Complétez les critères organisationnels via formulaire ou assistant conversationnel.</span>
+                </div>
+              </li>
+              <li>
+                <i data-lucide="trending-up"></i>
+                <div class="feature-strip-text">
+                  <strong>Plan d'action</strong>
+                  <span>Identifiez les non-conformités et les quick wins pour faire progresser votre score.</span>
+                </div>
+              </li>
+            </ul>
           </div>
+        </section>
 
-          <!-- URL Input Container -->
-          <div class="form-group" style="margin-bottom: 14px;">
-            <label for="projectUrl">URL(s) du Site Web (Optionnel)</label>
-            <div class="url-input-wrapper" style="position: relative; display: flex; align-items: center; margin-top: 4px;">
-              <i data-lucide="globe" style="position: absolute; left: 12px; top: 11px; width: 16px; height: 16px; color: rgba(255, 255, 255, 0.4);"></i>
-              <textarea id="projectUrl" rows="3" placeholder="https://exemple.com&#10;https://exemple.com/page-reference" style="width: 100%; padding: 10px 12px 10px 36px; background: rgba(255, 255, 255, 0.05); border: 1px solid rgba(255, 255, 255, 0.1); border-radius: 8px; color: #fff; font-size: 13px; resize: vertical; line-height: 1.4;"></textarea>
-            </div>
-            <p class="form-help" style="font-size: 11px; color: rgba(255, 255, 255, 0.5); margin-top: 6px; line-height: 1.4;">Une URL par ligne. Chaque page de reference sera telechargee et enrichie avec jusqu'a 4 liens internes.</p>
-          </div>
+        <div class="home-upload-column">
+        <section class="home-upload-card upload-box">
+          <h2>Nouvelle évaluation</h2>
+          <p class="upload-desc">ZIP du code et/ou URL du site — lancez l'audit en un clic.</p>
 
-          <!-- Selection mode d'analyse -->
-          <div class="form-group" style="margin-top: 14px; margin-bottom: 0;">
-            <label>Mode d'Analyse</label>
-            <div class="analysis-mode-selector">
-              <button type="button" class="mode-btn active" id="modeRegexBtn" data-mode="regex">
-                <i data-lucide="binary" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 4px;"></i> Classique (Regex)
-              </button>
-              <button type="button" class="mode-btn" id="modeLlmBtn" data-mode="llm">
-                <i data-lucide="cpu" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 4px;"></i> Assistée par IA
-              </button>
-            </div>
-          </div>
-
-          <!-- Panneau des options LLM -->
-          <div id="llmOptionsPanel" class="llm-options-panel hidden">
+          <form id="uploadForm" class="home-form">
+            <div class="home-form-scroll">
             <div class="form-group">
-              <label for="llmProvider">Fournisseur d'IA</label>
-              <select id="llmProvider">
-                <option value="local">Local (Ollama compatible)</option>
-                <option value="openai">OpenAI (ChatGPT)</option>
-                <option value="mistral">Mistral AI</option>
-                <option value="anthropic">Anthropic (Claude)</option>
-              </select>
+              <label for="projectName">Nom du projet</label>
+              <input type="text" id="projectName" placeholder="Mon Application Web" required>
             </div>
-            <div class="form-group" id="apiKeyGroup">
-              <label for="llmApiKey">Clé API</label>
-              <input type="password" id="llmApiKey" placeholder="Saisir la clé API...">
-            </div>
-            <div class="form-group" style="margin-bottom: 0;">
-              <label for="llmModel">Modèle cible</label>
-              <input type="text" id="llmModel" placeholder="gpt-4o-mini...">
-            </div>
-          </div>
-
-          <div class="form-group" style="margin-top: 14px; margin-bottom: 14px;">
-            <label>Traitement des critères manuels</label>
-            <div class="analysis-mode-selector">
-              <button type="button" class="manual-flow-btn active" id="manualFlowClassicBtn" data-flow="classic">
-                <i data-lucide="list-checks" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 4px;"></i> Entrée manuelle
-              </button>
-              <button type="button" class="manual-flow-btn" id="manualFlowChatbotBtn" data-flow="chatbot">
-                <i data-lucide="messages-square" style="width: 12px; height: 12px; vertical-align: middle; margin-right: 4px;"></i> Chatbot guidé
-              </button>
-            </div>
-          </div>
-
-          <div class="form-group criteria-picker">
-            <div class="criteria-picker-header">
-              <label>Critères à analyser</label>
-              <div>
-                <button type="button" class="criteria-picker-link" id="selectAllCriteriaBtn">Tout sélectionner</button>
-                <button type="button" class="criteria-picker-link" id="clearAllCriteriaBtn">Tout désélectionner</button>
+            <div class="form-group">
+              <label>Fichier ZIP (optionnel)</label>
+              <div class="drag-area drag-area-compact" id="dragArea">
+                <i data-lucide="upload-cloud" class="drag-icon"></i>
+                <span class="drag-text">Glisser-déposer ou</span>
+                <button type="button" class="btn btn-secondary btn-sm" id="browseBtn">Parcourir</button>
+                <input type="file" id="fileInput" accept=".zip" hidden>
+              </div>
+              <div id="fileInfo" class="file-info hidden">
+                <i data-lucide="file-archive" class="file-icon"></i>
+                <span id="fileName">project.zip</span>
+                <button type="button" id="removeFileBtn"><i data-lucide="x"></i></button>
               </div>
             </div>
-            <div id="criteriaSelectionSummary" class="criteria-selection-summary">Chargement du référentiel...</div>
-            <div id="criteriaSelectionPanel" class="criteria-selection-panel"></div>
-          </div>
-          
-          <button type="submit" class="btn btn-primary btn-block" id="submitBtn">
-            <i data-lucide="play" class="btn-icon"></i> Lancer l'Analyse
-          </button>
-        </form>
-      </div>
 
-      <!-- Projects List -->
-      <div class="projects-list-container">
-        <h3>Historique des Projets</h3>
-        <div id="projectsList" class="projects-list">
-          <!-- Populated by JavaScript -->
-          <div class="empty-state">
-            <i data-lucide="folder-open"></i>
-            <p>Aucun projet analysé</p>
+            <div class="form-group home-form-url">
+              <label for="projectUrl">URL(s) du site (optionnel)</label>
+              <div class="url-input-wrapper">
+                <i data-lucide="globe" class="url-field-icon"></i>
+                <textarea id="projectUrl" rows="2" placeholder="https://exemple.com"></textarea>
+              </div>
+            </div>
+
+            <div class="form-group">
+              <label>Mode d'analyse</label>
+              <div class="analysis-mode-selector">
+                <button type="button" class="mode-btn active" id="modeRegexBtn" data-mode="regex">
+                  <i data-lucide="binary"></i> Classique (Regex)
+                </button>
+                <button type="button" class="mode-btn" id="modeLlmBtn" data-mode="llm">
+                  <i class="fa-light fa-hexagon-nodes mode-icon-fa" aria-hidden="true"></i> Assisté par l'IA
+                </button>
+              </div>
+            </div>
+
+            <div id="llmOptionsPanel" class="llm-options-panel llm-options-panel-compact hidden">
+              <div class="home-form-row home-form-row-3">
+                <div class="form-group">
+                  <label for="llmProvider">Fournisseur</label>
+                  <select id="llmProvider">
+                    <option value="local">Local (Ollama)</option>
+                    <option value="openai">OpenAI</option>
+                    <option value="mistral">Mistral</option>
+                    <option value="anthropic">Anthropic</option>
+                  </select>
+                </div>
+                <div class="form-group" id="apiKeyGroup">
+                  <label for="llmApiKey">Clé API</label>
+                  <input type="password" id="llmApiKey" placeholder="Clé API...">
+                </div>
+                <div class="form-group">
+                  <label for="llmModel">Modèle</label>
+                  <input type="text" id="llmModel" placeholder="gpt-4o-mini...">
+                </div>
+              </div>
+            </div>
+
+            <details class="home-details">
+              <summary>Options avancées (critères, déclaration manuelle)</summary>
+              <div class="home-details-body">
+                <div class="form-group">
+                  <label>Critères manuels</label>
+                  <div class="analysis-mode-selector">
+                    <button type="button" class="manual-flow-btn active" id="manualFlowClassicBtn" data-flow="classic">
+                      <i data-lucide="list-checks"></i> Entrée manuelle
+                    </button>
+                    <button type="button" class="manual-flow-btn" id="manualFlowChatbotBtn" data-flow="chatbot">
+                      <i data-lucide="messages-square"></i> Chatbot guidé
+                    </button>
+                  </div>
+                </div>
+                <div class="form-group criteria-picker">
+                  <div class="criteria-picker-header">
+                    <label>Critères à analyser</label>
+                    <div>
+                      <button type="button" class="criteria-picker-link" id="selectAllCriteriaBtn">Tout</button>
+                      <button type="button" class="criteria-picker-link" id="clearAllCriteriaBtn">Aucun</button>
+                    </div>
+                  </div>
+                  <div id="criteriaSelectionSummary" class="criteria-selection-summary">Chargement du référentiel...</div>
+                  <div id="criteriaSelectionPanel" class="criteria-selection-panel criteria-selection-panel-compact"></div>
+                </div>
+              </div>
+            </details>
+            </div>
+
+            <div class="home-form-actions">
+              <button type="submit" class="btn btn-primary btn-block" id="submitBtn">
+                <i data-lucide="play" class="btn-icon"></i> Lancer l'analyse
+              </button>
+            </div>
+          </form>
+        </section>
+        </div>
+      </div>
+    </div>
+
+    <!-- Retractable history sidebar (home only) -->
+    <aside id="historyDrawer" class="history-drawer" aria-label="Historique des projets">
+      <div class="history-drawer-inner">
+        <button type="button" class="history-drawer-handle" id="historyDrawerToggle" title="Historique des projets">
+          <i data-lucide="panel-right-open"></i>
+          <span>Historique</span>
+        </button>
+        <div class="history-drawer-panel">
+          <div class="history-drawer-head">
+            <h2>Historique</h2>
+            <button type="button" class="icon-btn" id="historyDrawerClose" title="Replier">
+              <i data-lucide="panel-right-close"></i>
+            </button>
+          </div>
+          <div id="projectsList" class="projects-list projects-list-drawer">
+            <div class="empty-state">
+              <i data-lucide="folder-open"></i>
+              <p>Aucun projet analysé</p>
+            </div>
           </div>
         </div>
       </div>
     </aside>
+    <div id="historyDrawerBackdrop" class="history-drawer-backdrop hidden" aria-hidden="true"></div>
 
-    <!-- Main Dashboard Area -->
-    <main class="main-content">
-      
-      <!-- Main view when a project is selected -->
-      <div id="projectView" class="project-view hidden">
+    <!-- Full-page report -->
+    <main id="projectView" class="project-view main-report hidden">
         
         <!-- Project Header -->
         <header class="project-header">
@@ -152,12 +215,14 @@
             <span class="badge" id="projectStatusBadge">Terminé</span>
             <h1 id="currentProjectName">Nom du Projet</h1>
             <p class="project-meta">
-              <span id="projectDate"><i data-lucide="calendar"></i> 19 Mai 2026</span>
               <button type="button" id="projectFiles" class="project-files-link"><i data-lucide="file-code"></i> 142 fichiers</button>
               <span id="projectMode" class="hidden"><i data-lucide="cpu"></i> Analyse IA</span>
             </p>
           </div>
           <div class="project-actions">
+            <button type="button" class="btn btn-secondary btn-sm" id="newEvaluationBtn">
+              <i data-lucide="plus-circle" class="btn-icon"></i> Nouvelle évaluation
+            </button>
             <button class="btn btn-secondary btn-sm hidden" id="openManualAssistantBtn">
               <i data-lucide="messages-square" class="btn-icon"></i> Assistant formulaire
             </button>
@@ -182,26 +247,42 @@
           </div>
         </div>
 
-        <!-- Processing State Alert -->
-        <div id="projectProcessingAlert" class="alert alert-info hidden">
-          <div class="spinner"></div>
-          <div class="alert-body">
-            <h4>Analyse en cours...</h4>
-            <p>Le moteur inspecte le code source pour corréler les patterns techniques aux critères RGESN.</p>
+        <!-- Analysis progress (full view, no page scroll) -->
+        <div id="projectProcessingAlert" class="analysis-progress-view hidden">
+          <div class="analysis-progress-card">
+            <div class="spinner analysis-progress-spinner"></div>
+            <h4 id="analysisProgressTitle">Analyse en cours</h4>
+            <p id="analysisProgressStage">Initialisation...</p>
+            <div class="analysis-progress-bar-track" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
+              <div id="analysisProgressBar" class="analysis-progress-bar-fill"></div>
+            </div>
+            <div class="analysis-progress-meta">
+              <span id="analysisProgressPercent">0%</span>
+              <span id="analysisProgressEta">Temps restant estimé : —</span>
+            </div>
           </div>
         </div>
-        <!-- Dashboard Content Grid -->
-        <div id="projectDashboardContent" class="dashboard-grid">
-          
-          <!-- Key Metrics Column -->
-          <div class="card card-score-hero">
+        <div id="projectDashboardContent" class="dashboard-shell hidden">
+          <nav class="dashboard-nav" aria-label="Sections du rapport">
+            <div class="dashboard-nav-tabs" id="dashboardNavTabs">
+              <button type="button" class="dashboard-nav-tab active" data-panel="synthese">Synthèse</button>
+              <button type="button" class="dashboard-nav-tab" data-panel="action">Plan d'action</button>
+              <button type="button" class="dashboard-nav-tab" data-panel="referentiel">Référentiel</button>
+              <button type="button" class="dashboard-nav-tab hidden" id="dashboardTabDiagnostic" data-panel="diagnostic">Diagnostic IA</button>
+            </div>
+          </nav>
+
+          <div class="dashboard-panels">
+            <section class="dashboard-panel active" data-panel="synthese" id="dashboardPanelSynthese">
+              <div class="panel-synthese-layout">
+          <div class="card card-score-hero card-panel-fit card-panel-score">
             <div class="card-header">
               <h2>Conformité Globale</h2>
               <span class="tooltip-trigger" title="Le score est calculé en pondérant chaque critère validé (Priorité x Difficulté), excluant les critères identifiés comme Non-Applicables (N/A)."><i data-lucide="help-circle"></i></span>
             </div>
             <div class="card-body score-hero-body">
-              <div class="gauge-container">
-                <svg class="progress-ring" width="200" height="200">
+              <div class="gauge-container gauge-container-compact">
+                <svg class="progress-ring" width="160" height="160" viewBox="0 0 200 200">
                   <circle class="progress-ring__circle-bg" stroke="#1e293b" stroke-width="14" fill="transparent" r="82" cx="100" cy="100"/>
                   <circle class="progress-ring__circle" stroke="url(#gradientGreen)" stroke-width="14" stroke-linecap="round" fill="transparent" r="82" cx="100" cy="100" stroke-dasharray="515.22" stroke-dashoffset="515.22"/>
                   <defs>
@@ -223,19 +304,21 @@
           </div>
 
           <!-- Category Scores -->
-          <div class="card card-categories">
+          <div class="card card-categories card-panel-fit">
             <div class="card-header">
               <h2>Impact par Catégorie RGESN</h2>
             </div>
-            <div class="card-body">
-              <div id="categoriesList" class="categories-grid">
+            <div class="card-body panel-scroll-region">
+              <div id="categoriesList" class="categories-grid categories-grid-compact">
                 <!-- Populated by JavaScript -->
               </div>
             </div>
           </div>
+              </div>
+            </section>
 
-          <!-- Action Plan Section -->
-          <div class="card card-quick-wins full-width">
+            <section class="dashboard-panel" data-panel="action" id="dashboardPanelAction">
+          <div class="card card-quick-wins card-panel-fit">
             <div class="card-header">
               <div class="header-title">
                 <h2><i data-lucide="list-todo" class="icon-zap"></i> Plan d'Action (Critères Non-Validés)</h2>
@@ -243,9 +326,9 @@
               </div>
               <p class="subtitle">Tous les critères identifiés comme <strong>Non-Validé</strong> lors de l'audit. Corrigez-les pour remonter votre score.</p>
             </div>
-            <div class="card-body">
+            <div class="card-body card-body-stacked-scroll">
               <!-- LLM Action Plan Summary Container -->
-              <div id="llmSummaryContainer" class="llm-summary-box" style="margin-bottom: 24px; padding: 20px; background: rgba(139, 92, 246, 0.05); border: 1px dashed rgba(139, 92, 246, 0.25); border-radius: var(--border-radius-md);">
+              <div id="llmSummaryContainer" class="llm-summary-box panel-block-fixed" style="margin-bottom: 16px; padding: 20px; background: rgba(139, 92, 246, 0.05); border: 1px dashed rgba(139, 92, 246, 0.25); border-radius: var(--border-radius-md);">
                 <div style="display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px;">
                   <div style="display: flex; align-items: center; gap: 8px;">
                     <i data-lucide="sparkles" style="color: #a78bfa; width: 18px; height: 18px;"></i>
@@ -261,14 +344,15 @@
                 </div>
               </div>
 
-              <div id="quickWinsDeck" class="quick-wins-deck">
+              <div id="quickWinsDeck" class="quick-wins-deck panel-scroll-region">
                 <!-- Populated by JavaScript -->
               </div>
             </div>
           </div>
+            </section>
 
-          <!-- Criteria Explorer (Filters & List) -->
-          <div class="card card-explorer full-width">
+            <section class="dashboard-panel" data-panel="referentiel" id="dashboardPanelReferentiel">
+          <div class="card card-explorer card-panel-fit">
             <div class="card-header explorer-header">
               <h2>Référentiel & Résultats de l'Audit</h2>
               
@@ -289,8 +373,8 @@
               </div>
             </div>
             
-            <div class="card-body">
-              <div class="criteria-list-headers">
+            <div class="card-body card-body-stacked-scroll">
+              <div class="criteria-list-headers panel-block-fixed">
                 <span class="col-code">Code</span>
                 <span class="col-crit">Critère / Point de Contrôle</span>
                 <span class="col-cat">Catégorie</span>
@@ -300,12 +384,53 @@
                 <span class="col-status">Statut</span>
               </div>
               
-              <div id="criteriaList" class="criteria-accordion-list">
+              <div id="criteriaList" class="criteria-accordion-list panel-scroll-region">
                 <!-- Populated by JavaScript -->
               </div>
             </div>
           </div>
+            </section>
 
+            <section class="dashboard-panel" data-panel="diagnostic" id="dashboardPanelDiagnostic">
+              <div id="llmDiagnosticCard" class="card card-panel-fit llm-diagnostic-panel hidden">
+                <div class="card-header">
+                  <h2><i data-lucide="activity"></i> Diagnostic d'Analyse IA</h2>
+                  <span class="badge" id="llmDiagStatusBadge">Succès</span>
+                </div>
+                <div class="card-body panel-scroll-region">
+                  <div class="llm-diag-grid">
+                    <div>
+                      <p class="llm-diag-label">Fournisseur d'IA</p>
+                      <p id="llmDiagProvider" class="llm-diag-value">-</p>
+                    </div>
+                    <div>
+                      <p class="llm-diag-label">Modèle interrogé</p>
+                      <p id="llmDiagModel" class="llm-diag-value">-</p>
+                    </div>
+                    <div>
+                      <p class="llm-diag-label">Temps de réponse</p>
+                      <p id="llmDiagTime" class="llm-diag-value">-</p>
+                    </div>
+                    <div>
+                      <p class="llm-diag-label">Critères IA</p>
+                      <p id="llmDiagTargetCount" class="llm-diag-value">-</p>
+                    </div>
+                  </div>
+                  <div id="llmDiagErrorContainer" class="llm-diag-error hidden">
+                    <p class="llm-diag-error-title"><i data-lucide="alert-circle"></i> Connexion impossible ou inférence échouée</p>
+                    <code id="llmDiagErrorMsg">-</code>
+                    <p class="llm-diag-error-hint">Le moteur a basculé en mode <strong>Repli Classique (Regex)</strong> pour un audit complet.</p>
+                  </div>
+                  <div id="llmDiagOutputContainer">
+                    <button type="button" class="btn btn-secondary btn-sm" id="toggleLlmRawBtn">
+                      <i data-lucide="chevron-right" class="btn-icon"></i> Voir la réponse brute de l'IA (JSON)
+                    </button>
+                    <pre id="llmDiagRawPre" class="hidden llm-diag-raw-pre"></pre>
+                  </div>
+                </div>
+              </div>
+            </section>
+          </div>
         </div>
 
         <div id="manualChatbotView" class="manual-chatbot-view hidden">
@@ -323,83 +448,6 @@
             <div id="manualChatbotMessages" class="manual-chatbot-messages"></div>
           </div>
         </div>
-
-        <!-- LLM Diagnostic Card -->
-        <div id="llmDiagnosticCard" class="card full-width hidden" style="margin-top: 30px; border-color: rgba(139, 92, 246, 0.25); background: linear-gradient(135deg, rgba(139, 92, 246, 0.05) 0%, rgba(0, 0, 0, 0) 100%);">
-          <div class="card-header" style="border-bottom: 1px solid rgba(139, 92, 246, 0.15);">
-            <h2 style="color: #c084fc;"><i data-lucide="activity" style="width:16px; height:16px; vertical-align:middle; margin-right:6px;"></i> Diagnostic d'Analyse IA</h2>
-            <span class="badge" id="llmDiagStatusBadge">Succès</span>
-          </div>
-          <div class="card-body" style="padding: 20px;">
-            <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 20px; margin-bottom: 16px;">
-              <div>
-                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Fournisseur d'IA</p>
-                <p id="llmDiagProvider" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
-              </div>
-              <div>
-                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Modèle Interrogé</p>
-                <p id="llmDiagModel" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
-              </div>
-              <div>
-                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Temps de réponse</p>
-                <p id="llmDiagTime" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
-              </div>
-              <div>
-                <p style="font-size: 11px; text-transform: uppercase; color: var(--text-muted); font-weight: 700;">Critères IA</p>
-                <p id="llmDiagTargetCount" style="font-size: 15px; font-weight: 600; margin-top: 4px; color: var(--text-main);">-</p>
-              </div>
-            </div>
-            
-            <!-- Connection Failed Error Message -->
-            <div id="llmDiagErrorContainer" class="hidden" style="background: rgba(239, 68, 68, 0.08); border: 1px solid rgba(239, 68, 68, 0.2); border-radius: var(--border-radius-sm); padding: 12px 16px; margin-bottom: 16px;">
-              <p style="font-size: 12px; font-weight: 700; color: #fca5a5; display: flex; align-items: center; gap: 6px;"><i data-lucide="alert-circle" style="width: 14px; height: 14px;"></i> Connexion impossible ou inférence échouée :</p>
-              <code id="llmDiagErrorMsg" style="display: block; font-family: monospace; font-size: 11px; color: #fecaca; margin-top: 6px; white-space: pre-wrap; word-break: break-all;">-</code>
-              <p style="font-size: 11px; color: var(--text-muted); margin-top: 8px;">Le moteur a automatiquement basculé en mode <strong>Repli Classique (Regex)</strong> pour vous délivrer un audit complet.</p>
-            </div>
-
-            <!-- Toggle raw response -->
-            <div id="llmDiagOutputContainer">
-              <button type="button" class="btn btn-secondary btn-sm" id="toggleLlmRawBtn" style="border-color: rgba(139, 92, 246, 0.3); color: #c084fc; background: rgba(139, 92, 246, 0.05); font-weight: 700;">
-                <i data-lucide="chevron-right" class="btn-icon"></i> Voir la réponse brute de l'IA (JSON)
-              </button>
-              <pre id="llmDiagRawPre" class="hidden" style="margin-top: 14px; padding: 14px; background: rgba(0, 0, 0, 0.5); border: 1px solid var(--card-border); border-radius: var(--border-radius-sm); font-family: monospace; font-size: 11px; color: #a78bfa; overflow-x: auto; max-height: 250px; white-space: pre-wrap;"></pre>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      <!-- Welcome / Empty State View -->
-      <div id="welcomeView" class="welcome-view">
-        <div class="welcome-container">
-          <div class="eco-circle animate-pulse">
-            <i data-lucide="shield-check" class="welcome-shield"></i>
-          </div>
-          <h1>Portail d'Écoconception Logicielle RGESN</h1>
-          <p>
-            Mesurez l'empreinte environnementale de vos architectures de services numériques et optimisez votre conformité aux 10 dimensions du <strong>Référentiel Général d'Écoconception des Services Numériques (RGESN)</strong>.
-          </p>
-          <div class="feature-highlights">
-            <div class="feature-item">
-              <i data-lucide="binary"></i>
-              <h4>Scan Statique Auto</h4>
-              <p>Analyse automatique de vos dépendances, balises multimédias et fichiers d'infrastructures.</p>
-            </div>
-            <div class="feature-item">
-              <i data-lucide="edit-3"></i>
-              <h4>Déclaration Guidée</h4>
-              <p>Formulaires d'auto-évaluation intégrés pour les aspects de gouvernance (Hébergement, Accessibilité).</p>
-            </div>
-            <div class="feature-item">
-              <i data-lucide="trending-up"></i>
-              <h4>Plan d'Action</h4>
-              <p>Identification instantanée des Quick Wins prioritaires pour orienter vos sprints de refactoring.</p>
-            </div>
-          </div>
-          <div class="welcome-action">
-            <p>Sélectionnez un projet existant ou téléversez un ZIP dans la barre latérale pour démarrer l'audit.</p>
-          </div>
-        </div>
-      </div>
     </main>
 
   </div>
@@ -470,6 +518,6 @@
   </aside>
 
   <!-- JavaScript logic -->
-  <script src="app.js"></script>
+  <script src="app.js?v=20260520-scroll"></script>
 </body>
 </html>

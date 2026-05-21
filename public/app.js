@@ -5,6 +5,8 @@ let currentProject = null;
 let criteriaDefinitions = [];
 let pollingInterval = null;
 let pollingProjectId = null;
+let progressUiInterval = null;
+let poll404Retries = 0;
 let isLoadingProjectDetails = false;
 let currentProjectSummary = null;
 let currentProjectSummaryId = null;
@@ -70,12 +72,18 @@ const llmApiKey = document.getElementById('llmApiKey');
 const llmModel = document.getElementById('llmModel');
 const projectMode = document.getElementById('projectMode');
 
-const welcomeView = document.getElementById('welcomeView');
+const homeView = document.getElementById('homeView');
 const projectView = document.getElementById('projectView');
+const appContainer = document.getElementById('appContainer');
+const newEvaluationBtn = document.getElementById('newEvaluationBtn');
+const historyDrawer = document.getElementById('historyDrawer');
+const historyDrawerToggle = document.getElementById('historyDrawerToggle');
+const historyDrawerClose = document.getElementById('historyDrawerClose');
+const historyDrawerBackdrop = document.getElementById('historyDrawerBackdrop');
+const openHistoryBtn = document.getElementById('openHistoryBtn');
 
 const currentProjectName = document.getElementById('currentProjectName');
 const projectStatusBadge = document.getElementById('projectStatusBadge');
-const projectDate = document.getElementById('projectDate');
 const projectFiles = document.getElementById('projectFiles');
 const deleteProjectBtn = document.getElementById('deleteProjectBtn');
 const downloadPdfBtn = document.getElementById('downloadPdfBtn');
@@ -100,6 +108,11 @@ const ignoredFilesList = document.getElementById('ignoredFilesList');
 const projectErrorAlert = document.getElementById('projectErrorAlert');
 const projectErrorMsg = document.getElementById('projectErrorMsg');
 const projectProcessingAlert = document.getElementById('projectProcessingAlert');
+const analysisProgressBar = document.getElementById('analysisProgressBar');
+const analysisProgressPercent = document.getElementById('analysisProgressPercent');
+const analysisProgressStage = document.getElementById('analysisProgressStage');
+const analysisProgressEta = document.getElementById('analysisProgressEta');
+const analysisProgressTitle = document.getElementById('analysisProgressTitle');
 const projectDashboardContent = document.getElementById('projectDashboardContent');
 const manualChatbotView = document.getElementById('manualChatbotView');
 const manualChatbotProgress = document.getElementById('manualChatbotProgress');
@@ -116,6 +129,10 @@ const quickWinsDeck = document.getElementById('quickWinsDeck');
 const criteriaList = document.getElementById('criteriaList');
 const criteriaSearch = document.getElementById('criteriaSearch');
 const filterTabs = document.querySelectorAll('.filter-tab');
+const dashboardTabDiagnostic = document.getElementById('dashboardTabDiagnostic');
+
+const DASHBOARD_PANEL_ORDER = ['synthese', 'action', 'referentiel', 'diagnostic'];
+let activeDashboardPanel = 'synthese';
 
 // Ingestion Drag-and-Drop Event Listeners
 ['dragenter', 'dragover'].forEach(eventName => {
@@ -361,6 +378,13 @@ uploadForm.addEventListener('submit', async (e) => {
     alert("Veuillez sélectionner au moins un critère à analyser.");
     return;
   }
+
+  if (currentProject && (currentProject.status === 'En attente' || currentProject.status === "En cours d'analyse")) {
+    const proceed = window.confirm(
+      "Une analyse est déjà en cours pour le projet affiché. Lancer une nouvelle analyse quand même ?"
+    );
+    if (!proceed) return;
+  }
   const excludedCriteria = criteriaDefinitions
     .map(crit => crit.code)
     .filter(code => !selectedCriteriaCodes.has(code));
@@ -377,6 +401,13 @@ uploadForm.addEventListener('submit', async (e) => {
     formData.append('llmApiKey', apiKey);
     formData.append('llmModel', model);
   }
+
+  if (pollingInterval) {
+    clearInterval(pollingInterval);
+    pollingInterval = null;
+    pollingProjectId = null;
+  }
+  stopProgressUiTicker();
 
   submitBtn.disabled = true;
   submitBtn.innerHTML = '<span class="spinner" style="width: 14px; height: 14px; border-width: 2px;"></span> Analyse en préparation...';
@@ -484,21 +515,19 @@ async function selectProject(projectId) {
   if (reportChatModel) reportChatModel.value = '';
   if (reportChatApiKey) reportChatApiKey.value = '';
   
-  // Highlight active sidebar item
-  const items = document.querySelectorAll('.project-item');
-  items.forEach(item => item.classList.remove('active'));
-  
   renderProjectsList();
-  
-  // Cancel previous polling
+
+  // Cancel previous polling / progress UI
   if (pollingInterval) {
     clearInterval(pollingInterval);
     pollingInterval = null;
     pollingProjectId = null;
   }
+  stopProgressUiTicker();
+  poll404Retries = 0;
 
-  welcomeView.classList.add('hidden');
-  projectView.classList.remove('hidden');
+  closeHistoryDrawer();
+  showProjectView();
 
   await loadProjectDetails();
 }
@@ -513,16 +542,21 @@ async function loadProjectDetails() {
     const isPollingRequest = pollingProjectId === currentProjectId;
     const res = await fetch(`/api/projects/${currentProjectId}${isPollingRequest ? '?poll=1' : ''}`);
     if (res.status === 404) {
-      // If project was deleted, go back to welcome
-      showWelcomeView();
+      if (isPollingRequest && poll404Retries < 6) {
+        poll404Retries += 1;
+        return;
+      }
+      poll404Retries = 0;
+      console.warn(`Project ${currentProjectId} not found (${isPollingRequest ? 'poll' : 'load'}).`);
+      showHomeView();
       return;
     }
-    
+
+    poll404Retries = 0;
     currentProject = await res.json();
     
     // Set labels
     currentProjectName.textContent = currentProject.name;
-    projectDate.innerHTML = `<i data-lucide="calendar"></i> ${new Date(currentProject.createdAt).toLocaleDateString('fr-FR', { day: 'numeric', month: 'long', year: 'numeric' })}`;
     projectFiles.innerHTML = `<i data-lucide="file-code"></i> ${currentProject.totalFiles} fichiers`;
     projectFiles.disabled = false;
     
@@ -545,6 +579,8 @@ async function loadProjectDetails() {
     if (currentProject.status === 'En attente' || currentProject.status === "En cours d'analyse") {
       projectErrorAlert.classList.add('hidden');
       projectProcessingAlert.classList.remove('hidden');
+      updateAnalysisProgressUI();
+      startProgressUiTicker();
       projectDashboardContent.classList.add('hidden');
       if (manualChatbotView) manualChatbotView.classList.add('hidden');
       if (openManualAssistantBtn) openManualAssistantBtn.classList.add('hidden');
@@ -556,12 +592,13 @@ async function loadProjectDetails() {
       const diagCard = document.getElementById('llmDiagnosticCard');
       if (diagCard) diagCard.classList.add('hidden');
       
-      // Start Polling
+      // Start Polling (frequent updates for progress bar)
       if (!pollingInterval) {
         pollingProjectId = currentProjectId;
-        pollingInterval = setInterval(loadProjectDetails, 3000);
+        pollingInterval = setInterval(loadProjectDetails, 1200);
       }
     } else if (currentProject.status === 'Erreur') {
+      stopProgressUiTicker();
       if (pollingInterval) {
         clearInterval(pollingInterval);
         pollingInterval = null;
@@ -583,11 +620,21 @@ async function loadProjectDetails() {
       projectErrorAlert.classList.remove('hidden');
     } else {
       // Completed successfully!
+      const wasShowingProgress = projectProcessingAlert && !projectProcessingAlert.classList.contains('hidden');
+      stopProgressUiTicker();
+
       if (pollingInterval) {
         clearInterval(pollingInterval);
         pollingInterval = null;
         pollingProjectId = null;
       }
+
+      if (wasShowingProgress) {
+        if (analysisProgressStage) analysisProgressStage.textContent = 'Analyse terminée !';
+        setProgressBarVisual(100);
+        await delay(500);
+      }
+
       projectProcessingAlert.classList.add('hidden');
       projectErrorAlert.classList.add('hidden');
       // Show PDF download button
@@ -603,6 +650,7 @@ async function loadProjectDetails() {
       if (diagCard) {
         if (currentProject.llmDiagnostic) {
           diagCard.classList.remove('hidden');
+          updateDashboardTabs();
           
           // Fill details
           document.getElementById('llmDiagProvider').textContent = currentProject.llmDiagnostic.provider.toUpperCase();
@@ -647,6 +695,7 @@ async function loadProjectDetails() {
           }
         } else {
           diagCard.classList.add('hidden');
+          updateDashboardTabs();
         }
       }
       
@@ -660,6 +709,8 @@ async function loadProjectDetails() {
         shouldUseChatbot,
         llmDiagnosticVisible: Boolean(currentProject.llmDiagnostic)
       });
+
+      activeDashboardPanel = 'synthese';
 
       try {
         renderDashboard();
@@ -707,13 +758,45 @@ function shouldOpenManualAssistant() {
   return currentProject.analysisMode === 'llm';
 }
 
+function getDashboardPanelOrder() {
+  const hasDiag = Boolean(currentProject && currentProject.llmDiagnostic);
+  if (!hasDiag) return DASHBOARD_PANEL_ORDER.filter(id => id !== 'diagnostic');
+  return [...DASHBOARD_PANEL_ORDER];
+}
+
+function updateDashboardTabs() {
+  const hasDiag = Boolean(currentProject && currentProject.llmDiagnostic);
+  if (dashboardTabDiagnostic) {
+    dashboardTabDiagnostic.classList.toggle('hidden', !hasDiag);
+  }
+  const order = getDashboardPanelOrder();
+  if (!order.includes(activeDashboardPanel)) {
+    activeDashboardPanel = 'synthese';
+  }
+}
+
+function setDashboardPanel(panelId) {
+  const order = getDashboardPanelOrder();
+  if (!order.includes(panelId)) panelId = order[0];
+  activeDashboardPanel = panelId;
+
+  document.querySelectorAll('.dashboard-panel').forEach(panel => {
+    panel.classList.toggle('active', panel.dataset.panel === panelId);
+  });
+
+  document.querySelectorAll('.dashboard-nav-tab').forEach(tab => {
+    if (tab.id === 'dashboardTabDiagnostic' && tab.classList.contains('hidden')) return;
+    tab.classList.toggle('active', tab.dataset.panel === panelId);
+  });
+
+  lucide.createIcons();
+}
+
 function showProjectDashboard() {
   projectDashboardContent.classList.remove('hidden');
   if (manualChatbotView) manualChatbotView.classList.add('hidden');
-  const diagCard = document.getElementById('llmDiagnosticCard');
-  if (diagCard && currentProject && currentProject.llmDiagnostic) {
-    diagCard.classList.remove('hidden');
-  }
+  updateDashboardTabs();
+  setDashboardPanel(activeDashboardPanel);
 }
 
 function showManualChatbot() {
@@ -879,43 +962,40 @@ function renderDashboard() {
     if (llmSummaryContainer) {
       llmSummaryContainer.classList.remove('hidden');
     }
-    
-    // Sort criteria by Priority (Prioritaire first) and then Difficulty (Faible first)
+
     nonValidatedCriteria.sort((a, b) => {
       const aPrio = a.priority.toLowerCase().includes('prioritaire') ? 0 : 1;
       const bPrio = b.priority.toLowerCase().includes('prioritaire') ? 0 : 1;
       if (aPrio !== bPrio) return aPrio - bPrio;
-      
-      const difficultyOrder = { 'faible': 0, 'moyen': 1, 'fort': 2 };
+
+      const difficultyOrder = { faible: 0, moyen: 1, fort: 2 };
       const aDiff = difficultyOrder[a.difficulty.toLowerCase()] ?? 1;
       const bDiff = difficultyOrder[b.difficulty.toLowerCase()] ?? 1;
       return aDiff - bDiff;
     });
 
-    quickWinsDeck.innerHTML = nonValidatedCriteria.map(qw => {
-      return `
-        <div class="quick-win-card">
-          <div class="quick-win-header">
-            <span class="quick-win-code">${qw.code}</span>
-            <span class="quick-win-cat">${escapeHTML(qw.category)}</span>
-          </div>
-          <p class="quick-win-text">${escapeHTML(getNegativeFormulation(qw.code, qw.text))}</p>
-          <div class="quick-win-footer">
-            <span class="quick-win-badge"><i data-lucide="award"></i> ${escapeHTML(qw.priority)} (${escapeHTML(qw.difficulty)})</span>
-            <button class="quick-win-action-btn" onclick="openCriterionInExplorer('${qw.code}')">
-              Optimiser <i data-lucide="arrow-right"></i>
-            </button>
-          </div>
+    quickWinsDeck.innerHTML = nonValidatedCriteria.map(qw => `
+      <div class="quick-win-card">
+        <div class="quick-win-header">
+          <span class="quick-win-code">${qw.code}</span>
+          <span class="quick-win-cat">${escapeHTML(qw.category)}</span>
         </div>
-      `;
-    }).join('');
-    
-    // Request LLM summary of Action Plan
+        <p class="quick-win-text">${escapeHTML(getNegativeFormulation(qw.code, qw.text))}</p>
+        <div class="quick-win-footer">
+          <span class="quick-win-badge"><i data-lucide="award"></i> ${escapeHTML(qw.priority)} (${escapeHTML(qw.difficulty)})</span>
+          <button type="button" class="quick-win-action-btn" onclick="openCriterionInExplorer('${qw.code}')">
+            Optimiser <i data-lucide="arrow-right"></i>
+          </button>
+        </div>
+      </div>
+    `).join('');
+
     fetchLlmActionPlanSummary();
   }
 
   // 4. Render Criteria Explorer
   renderCriteriaList();
+  updateDashboardTabs();
 }
 
 function getCategoryBarGradient(score) {
@@ -924,18 +1004,14 @@ function getCategoryBarGradient(score) {
   return 'linear-gradient(90deg, var(--color-blue) 0%, var(--color-green) 100%)';
 }
 
-// Render Criteria Explorer list with filters
-function renderCriteriaList() {
-  if (!currentProject) return;
+function getFilteredCriteria() {
+  if (!currentProject) return [];
 
   const searchQuery = criteriaSearch.value.toLowerCase().trim();
   const activeFilterTab = document.querySelector('.filter-tab.active');
   const filterType = activeFilterTab ? activeFilterTab.dataset.filter : 'all';
 
-  const criteriaArray = Object.values(currentProject.criteria);
-
-  // Filtered array
-  const filtered = criteriaArray.filter(crit => {
+  return Object.values(currentProject.criteria).filter(crit => {
     // 1. Text Search match
     const textMatch = crit.code.toLowerCase().includes(searchQuery) || 
                       crit.text.toLowerCase().includes(searchQuery) ||
@@ -950,7 +1026,14 @@ function renderCriteriaList() {
     
     // Status filters
     return crit.status === filterType;
-  });
+  }).sort((a, b) => a.code.localeCompare(b.code, 'fr'));
+}
+
+// Render Criteria Explorer list with filters
+function renderCriteriaList() {
+  if (!currentProject) return;
+
+  const filtered = getFilteredCriteria();
 
   if (filtered.length === 0) {
     criteriaList.innerHTML = `
@@ -1072,23 +1155,22 @@ function toggleCriterionExpanded(code) {
 
   if (!isOpen) {
     row.classList.add('open');
-    // Smooth scroll inside details
-    row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }
 }
 
 // Focus on a criterion in explorer
 function openCriterionInExplorer(code) {
-  // Clear search and filters to make sure it shows
   criteriaSearch.value = '';
   filterTabs.forEach(tab => tab.classList.remove('active'));
   document.querySelector('.filter-tab[data-filter="all"]').classList.add('active');
 
+  setDashboardPanel('referentiel');
   renderCriteriaList();
 
-  // Highlight and expand row
   setTimeout(() => {
     toggleCriterionExpanded(code);
+    const row = document.getElementById(`crit-row-${code}`);
+    if (row) row.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
   }, 100);
 }
 
@@ -1156,6 +1238,53 @@ if (openManualAssistantBtn) {
   });
 }
 
+if (newEvaluationBtn) {
+  newEvaluationBtn.addEventListener('click', () => showHomeView());
+}
+
+function setHistoryDrawerIcon(open) {
+  if (!historyDrawerToggle) return;
+  const icon = historyDrawerToggle.querySelector('[data-lucide]');
+  if (icon) icon.setAttribute('data-lucide', open ? 'panel-right-close' : 'panel-right-open');
+}
+
+function openHistoryDrawer() {
+  if (!historyDrawer) return;
+  historyDrawer.classList.add('open');
+  if (historyDrawerBackdrop) historyDrawerBackdrop.classList.remove('hidden');
+  setHistoryDrawerIcon(true);
+  lucide.createIcons();
+}
+
+function closeHistoryDrawer() {
+  if (!historyDrawer) return;
+  historyDrawer.classList.remove('open');
+  if (historyDrawerBackdrop) historyDrawerBackdrop.classList.add('hidden');
+  setHistoryDrawerIcon(false);
+  lucide.createIcons();
+}
+
+function toggleHistoryDrawer() {
+  if (historyDrawer && historyDrawer.classList.contains('open')) {
+    closeHistoryDrawer();
+  } else {
+    openHistoryDrawer();
+  }
+}
+
+if (historyDrawerToggle) {
+  historyDrawerToggle.addEventListener('click', toggleHistoryDrawer);
+}
+if (historyDrawerClose) {
+  historyDrawerClose.addEventListener('click', closeHistoryDrawer);
+}
+if (openHistoryBtn) {
+  openHistoryBtn.addEventListener('click', openHistoryDrawer);
+}
+if (historyDrawerBackdrop) {
+  historyDrawerBackdrop.addEventListener('click', closeHistoryDrawer);
+}
+
 deleteProjectBtn.addEventListener('click', async () => {
   if (!currentProjectId) return;
 
@@ -1171,7 +1300,7 @@ deleteProjectBtn.addEventListener('click', async () => {
     const data = await res.json();
     if (!res.ok) throw new Error(data.error || "Erreur de suppression.");
 
-    showWelcomeView();
+    showHomeView();
     await loadProjectsList();
 
   } catch (err) {
@@ -1425,24 +1554,142 @@ if (downloadPdfBtn) {
   });
 }
 
-function showWelcomeView() {
+function showHomeView() {
   currentProjectId = null;
   currentProject = null;
-  welcomeView.classList.remove('hidden');
-  projectView.classList.add('hidden');
+  if (homeView) homeView.classList.remove('hidden');
+  if (projectView) projectView.classList.add('hidden');
+  if (appContainer) {
+    appContainer.classList.remove('view-report');
+    appContainer.classList.add('view-home');
+  }
   if (reportChatTab) reportChatTab.classList.add('hidden');
   closeReportChat();
   closeFilesPanel();
-  
+  closeHistoryDrawer();
+
   if (pollingInterval) {
     clearInterval(pollingInterval);
     pollingInterval = null;
     pollingProjectId = null;
   }
-  
-  // Unhighlight list items
+
   const items = document.querySelectorAll('.project-item');
   items.forEach(item => item.classList.remove('active'));
+}
+
+function showProjectView() {
+  if (homeView) homeView.classList.add('hidden');
+  if (projectView) projectView.classList.remove('hidden');
+  if (appContainer) {
+    appContainer.classList.add('view-report');
+    appContainer.classList.remove('view-home');
+  }
+  closeHistoryDrawer();
+  window.scrollTo({ top: 0, behavior: 'instant' });
+}
+
+function formatDuration(seconds) {
+  const total = Math.max(0, Math.round(Number(seconds) || 0));
+  if (total < 60) return `${total} s`;
+  const minutes = Math.floor(total / 60);
+  const remainder = total % 60;
+  if (remainder === 0) return `${minutes} min`;
+  return `${minutes} min ${remainder} s`;
+}
+
+function getDisplayProgressPercent() {
+  const progress = currentProject?.analysisProgress;
+  if (!progress) {
+    return currentProject?.status === 'En attente' ? 2 : 5;
+  }
+
+  const stored = Number(progress.percent);
+  const storedPercent = Number.isFinite(stored) ? stored : 5;
+  const startedAt = progress.startedAt ? Date.parse(progress.startedAt) : NaN;
+  const estimated = Number(progress.estimatedTotalSeconds) || 60;
+
+  if (!Number.isFinite(startedAt) || estimated <= 0) {
+    return storedPercent;
+  }
+
+  const elapsed = Math.max(0, (Date.now() - startedAt) / 1000);
+  const timeBased = Math.min(99, Math.floor((elapsed / estimated) * 99));
+  return Math.max(storedPercent, timeBased);
+}
+
+function setProgressBarVisual(percent) {
+  const clamped = Math.max(0, Math.min(100, Math.round(percent)));
+  if (analysisProgressBar) {
+    analysisProgressBar.style.width = `${clamped}%`;
+    const track = analysisProgressBar.parentElement;
+    if (track) track.setAttribute('aria-valuenow', String(clamped));
+  }
+  if (analysisProgressPercent) {
+    analysisProgressPercent.textContent = `${clamped}%`;
+  }
+}
+
+function updateAnalysisProgressUI() {
+  if (!currentProject) return;
+
+  const progress = currentProject.analysisProgress || {};
+  const percent = getDisplayProgressPercent();
+
+  const stageLabel = progress.stageLabel
+    || (currentProject.status === 'En attente' ? 'En file d\'attente...' : 'Analyse en cours...');
+
+  setProgressBarVisual(percent);
+
+  if (analysisProgressStage) {
+    analysisProgressStage.textContent = stageLabel;
+  }
+  if (analysisProgressTitle) {
+    analysisProgressTitle.textContent = currentProject.status === 'En attente'
+      ? 'Analyse en file d\'attente'
+      : 'Analyse en cours';
+  }
+  if (analysisProgressEta) {
+    const eta = progress.etaSeconds;
+    if (Number.isFinite(eta) && eta > 0) {
+      analysisProgressEta.textContent = `Temps restant estimé : ${formatDuration(eta)}`;
+    } else if (Number.isFinite(progress.estimatedTotalSeconds) && progress.estimatedTotalSeconds > 0) {
+      const startedAt = progress.startedAt ? Date.parse(progress.startedAt) : NaN;
+      if (Number.isFinite(startedAt)) {
+        const remaining = Math.max(0, progress.estimatedTotalSeconds - (Date.now() - startedAt) / 1000);
+        analysisProgressEta.textContent = `Temps restant estimé : ~${formatDuration(remaining)}`;
+      } else {
+        analysisProgressEta.textContent = `Durée estimée : ~${formatDuration(progress.estimatedTotalSeconds)}`;
+      }
+    } else {
+      analysisProgressEta.textContent = 'Estimation en cours...';
+    }
+  }
+}
+
+function delay(ms) {
+  return new Promise(resolve => setTimeout(resolve, ms));
+}
+
+function startProgressUiTicker() {
+  if (progressUiInterval) return;
+  progressUiInterval = setInterval(() => {
+    if (!currentProject) return;
+    const processing = currentProject.status === 'En attente'
+      || currentProject.status === "En cours d'analyse";
+    if (!processing) {
+      stopProgressUiTicker();
+      return;
+    }
+    updateAnalysisProgressUI();
+  }, 400);
+}
+
+function stopProgressUiTicker() {
+  if (progressUiInterval) {
+    clearInterval(progressUiInterval);
+    progressUiInterval = null;
+  }
 }
 
 // Search and Filters Controls
@@ -1455,6 +1702,12 @@ filterTabs.forEach(tab => {
     filterTabs.forEach(t => t.classList.remove('active'));
     tab.classList.add('active');
     renderCriteriaList();
+  });
+});
+
+document.querySelectorAll('.dashboard-nav-tab').forEach(tab => {
+  tab.addEventListener('click', () => {
+    if (tab.dataset.panel) setDashboardPanel(tab.dataset.panel);
   });
 });
 
@@ -1666,6 +1919,7 @@ async function init() {
 
   await loadCriteriaDefinitions();
   await loadProjectsList();
+  if (appContainer) appContainer.classList.add('view-home');
   lucide.createIcons();
 }
 

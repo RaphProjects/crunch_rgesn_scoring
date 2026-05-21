@@ -1,0 +1,85 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="EcoSphere - Suivi de l'empreinte carbone et de la performance Green IT.">
+  <title>EcoSphere Dashboard - Terratech Solutions</title>
+  <link rel="stylesheet" href="style.css">
+</head>
+<body>
+
+  <!-- En-tête sémantique -->
+  <header class="app-header">
+    <div class="logo">
+      <span class="icon">🌱</span>
+      <h1>EcoSphere Dashboard</h1>
+    </div>
+    <nav class="main-nav">
+      <ul>
+        <li><a href="#dashboard">Tableau de bord</a></li>
+        <li><a href="#metrics">Indicateurs</a></li>
+        <li><a href="#settings">Paramètres</a></li>
+      </ul>
+    </nav>
+  </header>
+
+  <!-- Contenu Principal -->
+  <main class="app-content">
+    <section class="hero-section">
+      <h2>Pilotez l'empreinte environnementale de vos infrastructures Cloud</h2>
+      <p>Mesurez, comprenez et agissez en temps réel pour réduire l'impact carbone de vos architectures serveurs et applications.</p>
+    </section>
+
+    <!-- Section Vidéo de Démonstration (Conforme Uxui1 : pas d'autoplay) -->
+    <section class="media-section">
+      <h3>Présentation d'EcoSphere</h3>
+      <div class="video-container">
+        <video id="introVideo" width="640" height="360" controls poster="images/poster.jpg">
+          <source src="media/intro_ecosphere_h265.mp4" type="video/mp4; codecs=hevc">
+          <source src="media/intro_ecosphere_vp9.webm" type="video/webm; codecs=vp9">
+          <source src="media/intro_ecosphere_av1.webm" type="video/webm; codecs=av01.0.05M.08">
+          Votre navigateur ne supporte pas la lecture de vidéos en formats optimisés.
+        </video>
+        <p class="video-caption">Pour limiter l'impact réseau, activez la vidéo manuellement en cliquant sur Play.</p>
+      </div>
+    </section>
+
+    <!-- Zone Dashboard -->
+    <section id="dashboard" class="dashboard-preview">
+      <h3>Visualisation Directe</h3>
+      <div class="card-grid">
+        <div class="card">
+          <h4>Serveurs Actifs</h4>
+          <span class="value">14 / 16</span>
+          <p class="desc">2 serveurs décommissionnés automatiquement pour inactivité (Green IT).</p>
+        </div>
+        <div class="card">
+          <h4>Consommation Électrique</h4>
+          <span class="value">42.8 kWh</span>
+          <p class="desc">Baisse de 12% grâce au mode veille intelligente.</p>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <!-- Pied de page sémantique -->
+  <footer class="app-footer">
+    <p>&copy; 2026 Terratech Solutions. Plateforme éco-conçue en conformité avec le RGESN.</p>
+    <p><a href="#rgaa">Déclaration d'accessibilité (Conformité globale : 88%)</a> | <a href="#privacy">Politique de données</a></p>
+  </footer>
+
+  <!-- Scripts -->
+  <script src="app.js"></script>
+  <script>
+    // Enregistrement du Service Worker (pour la mise en cache Frnt2)
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/sw.js')
+          .then(reg => console.log('Service Worker enregistré avec succès !', reg.scope))
+          .catch(err => console.warn('Échec de l\'enregistrement du Service Worker', err));
+      });
+    }
+  </script>
+</body>
+</html>

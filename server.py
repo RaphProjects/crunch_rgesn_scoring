@@ -47,6 +47,14 @@ app = Flask(__name__, static_folder='public', static_url_path='')
 log_event("SERVER", "STARTUP", "Flask application initialized")
 PORT = int(os.environ.get('PORT', 5000))
 
+
+@app.after_request
+def disable_static_cache(response):
+    if request.path.endswith(('.js', '.css', '.html')):
+        response.headers['Cache-Control'] = 'no-cache, no-store, must-revalidate'
+        response.headers['Pragma'] = 'no-cache'
+    return response
+
 uploads_dir = os.path.join(os.path.dirname(__file__), 'uploads')
 os.makedirs(uploads_dir, exist_ok=True)
 os.makedirs(os.path.join(os.path.dirname(__file__), 'temp_extractions'), exist_ok=True)

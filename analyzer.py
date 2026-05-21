@@ -443,8 +443,13 @@ def get_file_ignore_reason(path):
 def is_uninteresting_file_name(path):
     return get_file_ignore_reason(path) is not None
 
-def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
+def analyze_directory(dir_path, llm_config=None, excluded_criteria=None, progress_callback=None):
+    def report(inner_percent, label):
+        if progress_callback:
+            progress_callback(max(0, min(100, int(inner_percent))), label)
+
     log_event("ANALYZER", "START", f"Starting static analysis for directory: {dir_path}")
+    report(0, "Lecture des fichiers du projet...")
     llm_diagnostic = None
     discovered_files = get_all_files(dir_path)
     all_files = discovered_files[:]
@@ -501,6 +506,12 @@ def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
                 })
                 files_read += 1
 
+        if files_read > 0 and files_read % 40 == 0:
+            read_progress = min(18, int((files_read / max(read_limit, 1)) * 18))
+            report(read_progress, f"Lecture des fichiers ({files_read}/{read_limit})...")
+
+    report(22, "Analyse statique des critères RGESN...")
+
     has_videos = any(
         (f['ext'] == '.html' and ('<video' in f['content'] or '<source' in f['content'])) or
         (f['ext'] == '.js' and ('createElement("video")' in f['content'] or "document.createElement('video'" in f['content'] or 'videoSrc' in f['content']))
@@ -546,7 +557,11 @@ def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
             "findings": []
         }
 
+    auto_rules_done = 0
+    auto_rules_estimate = 57
+
     def set_auto(code, status, justification, findings=None):
+        nonlocal auto_rules_done
         if findings is None:
             findings = []
         if code in results:
@@ -554,6 +569,13 @@ def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
             results[code]["status"] = status
             results[code]["justification"] = justification
             results[code]["findings"] = findings
+            auto_rules_done += 1
+            if auto_rules_done % 3 == 0:
+                rule_pct = 22 + int((auto_rules_done / auto_rules_estimate) * 25)
+                report(
+                    min(47, rule_pct),
+                    f"Analyse statique des critères ({auto_rules_done}/{auto_rules_estimate})...",
+                )
 
     # --- AUTOMATED RULES SCANNING ---
 
@@ -1066,6 +1088,8 @@ def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
         set_auto('Algo6', algo6_status, algo6_justification, algo6_findings)
         set_auto('Algo7', algo7_status, algo7_justification, algo7_findings)
 
+    report(48, "Analyse statique terminée...")
+
     # --- LLM REFINEMENT PIPELINE ---
     if llm_config and llm_config.get('analysisMode') == 'llm':
         start_time_ms = int(time.time() * 1000)
@@ -1095,11 +1119,16 @@ def analyze_directory(dir_path, llm_config=None, excluded_criteria=None):
                 f"Selected {len(llm_target_codes)} LLM criteria. guided_chatbot={preserve_manual_for_guided_flow}, manual_preserved_before_llm={manual_preserved_count}, targets={','.join(llm_target_codes)}"
             )
             full_raw_output = ""
+            total_llm_targets = max(len(llm_target_codes), 1)
+            report(55, "Préparation de l'analyse assistée par IA...")
 
-            for code in llm_target_codes:
+            for llm_index, code in enumerate(llm_target_codes):
                 initial = results.get(code)
                 if not initial:
                     continue
+
+                llm_pct = 55 + int(40 * (llm_index + 1) / total_llm_targets)
+                report(llm_pct, f"Analyse IA — critère {code} ({llm_index + 1}/{total_llm_targets})...")
 
                 system_prompt = f"""Tu es un auditeur expert du Référentiel Général d'Éco-conception de Services Numériques (RGESN).
 Ton rôle est de valider ou corriger la pré-analyse statique (regex) pour UN SEUL critère : "{code}".
@@ -1180,6 +1209,10 @@ Analyse rigoureusement ces éléments pour ce critère uniquement. Renvoie l'obj
                 "error": str(llm_error),
                 "rawOutput": full_raw_output.strip() if 'full_raw_output' in locals() else "Aucune réponse reçue du modèle."
             }
+    else:
+        report(58, "Finalisation de l'analyse statique...")
+
+    report(96, "Finalisation de l'inventaire des fichiers...")
 
     analyzed_paths = {f['path'] for f in file_contents}
     supported_text_exts = ['.html', '.htm', '.css', '.js', '.jsx', '.ts', '.tsx', '.json', '.yaml', '.yml', '.py', '.txt', '.md']

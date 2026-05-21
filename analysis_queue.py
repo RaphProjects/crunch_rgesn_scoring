@@ -12,6 +12,14 @@ from datetime import datetime
 import db
 from analyzer import analyze_directory
 from logger import log_event
+from analysis_progress import (
+    estimate_job_duration,
+    update_project_progress,
+    clear_project_progress,
+    start_progress_heartbeat,
+    stop_progress_heartbeat,
+    finish_project_progress,
+)
 
 def safe_url_filename(url, fallback):
     parsed = urllib.parse.urlparse(url)
@@ -183,16 +191,31 @@ class AnalysisQueue:
         self.worker_thread = None
 
     def enqueue(self, project_id, zip_file_path, original_name, llm_config=None, url=None, excluded_criteria=None):
+        excluded = excluded_criteria or []
         self.job_queue.put({
             "projectId": project_id,
             "zipFilePath": zip_file_path,
             "originalName": original_name,
             "llmConfig": llm_config,
             "url": url,
-            "excludedCriteria": excluded_criteria or []
+            "excludedCriteria": excluded,
         })
         log_event("QUEUE", "ENQUEUE", f"Job enqueued for project {project_id}. Queue size: {self.job_queue.qsize()}")
-        
+
+        estimated = estimate_job_duration({
+            "zipFilePath": zip_file_path,
+            "url": url,
+            "llmConfig": llm_config,
+            "excludedCriteria": excluded,
+        })
+        update_project_progress(
+            project_id,
+            2,
+            "queued",
+            "En file d'attente...",
+            estimated_total=estimated,
+        )
+
         if self.worker_thread is None or not self.worker_thread.is_alive():
             self.worker_thread = threading.Thread(target=self._worker_loop, daemon=True)
             self.worker_thread.start()
@@ -210,6 +233,8 @@ class AnalysisQueue:
             llm_config = job["llmConfig"]
             url = job.get("url")
             excluded_criteria = job.get("excludedCriteria", [])
+            estimated = estimate_job_duration(job)
+            heartbeat_started = False
 
             log_event("QUEUE", "JOB_START", f"Starting analysis for project {project_id}...")
 
@@ -218,8 +243,17 @@ class AnalysisQueue:
                 if not project:
                     raise ValueError(f"Project {project_id} not found in database.")
 
-                project["status"] = "En cours d'analyse"
-                db.update_project(project)
+                db.patch_project(project_id, {"status": "En cours d'analyse"})
+                update_project_progress(
+                    project_id,
+                    5,
+                    "start",
+                    "Démarrage de l'analyse...",
+                    reset_started=True,
+                    estimated_total=estimated,
+                )
+                start_progress_heartbeat(project_id, estimated)
+                heartbeat_started = True
 
                 extract_dir = os.path.join(os.path.dirname(__file__), 'temp_extractions', project_id)
                 os.makedirs(extract_dir, exist_ok=True)
@@ -227,6 +261,7 @@ class AnalysisQueue:
                 file_count = 0
 
                 if zip_file_path:
+                    update_project_progress(project_id, 12, "extract", "Extraction de l'archive ZIP...")
                     log_event("QUEUE", "EXTRACT", f"Extracting zip file for project {project_id}...")
                     try:
                         with zipfile.ZipFile(zip_file_path, 'r') as zip_ref:
@@ -238,9 +273,22 @@ class AnalysisQueue:
                 if urls:
                     log_event("QUEUE", "CRAWL_START", f"Crawling {len(urls)} URL(s) for project {project_id}: {urls}")
                     if len(urls) == 1:
+                        update_project_progress(
+                            project_id,
+                            28,
+                            "crawl",
+                            "Téléchargement du site web...",
+                        )
                         fetch_url_and_build_dir(urls[0], extract_dir)
                     else:
                         for idx, page_url in enumerate(urls, start=1):
+                            crawl_pct = 18 + int(18 * idx / max(len(urls), 1))
+                            update_project_progress(
+                                project_id,
+                                crawl_pct,
+                                "crawl",
+                                f"Téléchargement des pages web ({idx}/{len(urls)})...",
+                            )
                             url_dir = os.path.join(extract_dir, f"url_{idx:02d}_{safe_url_dirname(page_url, f'url_{idx:02d}')}")
                             os.makedirs(url_dir, exist_ok=True)
                             try:
@@ -261,10 +309,27 @@ class AnalysisQueue:
 
                 file_count = count_files(extract_dir)
 
+                update_project_progress(
+                    project_id,
+                    42,
+                    "prepare",
+                    "Préparation de l'analyse des critères...",
+                )
+
                 queued_mode = (llm_config or {}).get("analysisMode", "regex")
                 analyzer_label = "static + LLM" if queued_mode == "llm" else "static regex only"
                 log_event("QUEUE", "ANALYZE_START", f"Running {analyzer_label} analyzer on project {project_id}...")
-                criteria, llm_diagnostic, file_inventory = analyze_directory(extract_dir, llm_config, excluded_criteria=excluded_criteria)
+
+                def analyze_progress_callback(inner_percent, label):
+                    global_percent = 42 + int(max(0, min(100, inner_percent)) * 0.48)
+                    update_project_progress(project_id, global_percent, "analyze", label)
+
+                criteria, llm_diagnostic, file_inventory = analyze_directory(
+                    extract_dir,
+                    llm_config,
+                    excluded_criteria=excluded_criteria,
+                    progress_callback=analyze_progress_callback,
+                )
                 manual_count = len([crit for crit in criteria.values() if crit.get("status") == "Manuel"])
                 log_event(
                     "QUEUE",
@@ -272,6 +337,12 @@ class AnalysisQueue:
                     f"Project {project_id}: manualResolutionMode={(llm_config or {}).get('manualResolutionMode')}, manual criteria after analysis={manual_count}"
                 )
 
+                update_project_progress(
+                    project_id,
+                    92,
+                    "scores",
+                    "Calcul des scores et du rapport...",
+                )
                 scores = db.calculate_project_scores(criteria)
 
                 print(f"[Queue] Cleaning up temporary files for {project_id}...")
@@ -282,30 +353,39 @@ class AnalysisQueue:
                 except Exception as cleanup_error:
                     print(f"[Queue] Error during temp file cleanup: {cleanup_error}")
 
-                project["status"] = "Terminé"
-                project["totalFiles"] = file_count
-                project["criteria"] = criteria
-                project["globalScore"] = scores["globalScore"]
-                project["totalPointsObtained"] = scores["totalPointsObtained"]
-                project["totalPointsMax"] = scores["totalPointsMax"]
-                project["categoryScores"] = scores["categoryScores"]
-                project["fileInventory"] = file_inventory
-                project["completedAt"] = datetime.utcnow().isoformat() + "Z"
+                stop_progress_heartbeat(project_id)
+                finish_project_progress(project_id)
 
-                if llm_diagnostic:
-                    project["llmDiagnostic"] = llm_diagnostic
+                project = db.get_project_by_id(project_id)
+                if project:
+                    project["status"] = "Terminé"
+                    project["totalFiles"] = file_count
+                    project["criteria"] = criteria
+                    project["globalScore"] = scores["globalScore"]
+                    project["totalPointsObtained"] = scores["totalPointsObtained"]
+                    project["totalPointsMax"] = scores["totalPointsMax"]
+                    project["categoryScores"] = scores["categoryScores"]
+                    project["fileInventory"] = file_inventory
+                    project["completedAt"] = datetime.utcnow().isoformat() + "Z"
+                    if llm_diagnostic:
+                        project["llmDiagnostic"] = llm_diagnostic
+                    project.pop("analysisProgress", None)
+                    db.update_project(project)
 
-                db.update_project(project)
                 log_event("QUEUE", "JOB_SUCCESS", f"Finished analysis for project {project_id}. Global Score: {scores['globalScore']}%")
 
             except Exception as error:
                 log_event("QUEUE", "JOB_ERROR", f"Error processing project {project_id}: {error}")
+                stop_progress_heartbeat(project_id)
                 project = db.get_project_by_id(project_id)
                 if project:
                     project["status"] = "Erreur"
                     project["error"] = str(error)
+                    project.pop("analysisProgress", None)
                     db.update_project(project)
             finally:
+                if heartbeat_started:
+                    stop_progress_heartbeat(project_id)
                 self.job_queue.task_done()
                 time.sleep(1)
 
